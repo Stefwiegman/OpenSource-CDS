@@ -16,19 +16,25 @@ both; choose the physical one based on known displacement direction.
 import numpy as np
 
 
-# --- Module presets (swappable f1 + matched pinhole) ---
-# Shared parameter set: r0=1 mm beam radius, q=2 mm aperture parameter, I0=1.
+# --- Module presets ---
+# Basis-geometrie van onze opstelling: f1=25 mm, f2=50 mm, confocaal (L=f1+f2),
+# r0=8 mm laserbundel-straal bij F1, q=2 mm object-side aperture,
+# detector-oppervlak fungeert als pinhole (diameter 0.4 mm -> r=0.2 mm).
+# MODULE_MEDIUM = onze daadwerkelijke setup.
+# MODULE_FINE / MODULE_COARSE = hypothetische varianten met krappere / ruimere
+# effectieve aperture (bijv. door extra diafragma voor de detector te plakken),
+# zelfde lens-geometrie, om te laten zien hoe het bereik meeschaalt.
 MODULE_FINE = {
-    "f1": 25.0, "f2": 100.0, "L": 125.0,
-    "r0": 1.0, "q": 2.0, "r_diaphragm": 0.01, "I0": 1.0,
+    "f1": 25.0, "f2": 50.0, "L": 75.0,
+    "r0": 8.0, "q": 2.0, "r_diaphragm": 0.05, "I0": 1.0,
 }
 MODULE_MEDIUM = {
-    "f1": 50.0, "f2": 100.0, "L": 150.0,
-    "r0": 1.0, "q": 2.0, "r_diaphragm": 0.1, "I0": 1.0,
+    "f1": 25.0, "f2": 50.0, "L": 75.0,
+    "r0": 8.0, "q": 2.0, "r_diaphragm": 0.2, "I0": 1.0,
 }
 MODULE_COARSE = {
-    "f1": 100.0, "f2": 100.0, "L": 200.0,
-    "r0": 1.0, "q": 2.0, "r_diaphragm": 0.5, "I0": 1.0,
+    "f1": 25.0, "f2": 50.0, "L": 75.0,
+    "r0": 8.0, "q": 2.0, "r_diaphragm": 0.5, "I0": 1.0,
 }
 
 

@@ -20,13 +20,14 @@ from confocal import (
 
 
 # --- Parameters (all lengths in mm, intensity normalized) ---
-f1 = 50.0           # focal length lens 1 (objective side)
-f2 = 100.0          # focal length lens 2 (detector side)
+# Echte opstelling: f1=25 mm, f2=50 mm, confocaal, r0=8 mm, detector-Ø=0.4 mm.
+f1 = 25.0           # focal length lens 1 (sample side)
+f2 = 50.0           # focal length lens 2 (detector side)
 L = f1 + f2         # confocal setup: L = f1 + f2
-r0 = 1.0            # beam radius at lens 1 entrance (paper default)
+r0 = 8.0            # beam radius at lens 1 entrance (0.8 cm)
 q = 2.0             # object-side aperture parameter (paper default)
-r_diaphragm = 0.1   # pinhole radius (100 um)
-I0 = 1.0            # source intensity (normalized)
+r_diaphragm = 0.2   # detector-oppervlak als aperture (Ø 0.4 mm -> r=0.2 mm)
+I0 = 1.0            # source intensity (genormaliseerd; slikt BS-verlies etc.)
 
 # --- Peak position and half-width (derived) ---
 dz1_center = peak_position(f1, f2, L, q)

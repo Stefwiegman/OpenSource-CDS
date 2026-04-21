@@ -5,6 +5,41 @@ photodetector wordt voor een gegeven verplaatsing van de sample (forward), en
 rekent omgekeerd uit welke verplaatsing bij een gemeten intensiteit hoort
 (inverse).
 
+## Onze opstelling
+
+![Setup schets](docs/setup_sketch.jpg)
+
+Bovenaf: laser → half-doorlatende spiegel → F1 → sample (reflectief) →
+terug door F1 → half-doorlatende spiegel (doorgelaten) → F2 → vouwspiegel →
+photodetector. `L` is de afstand tussen F1 en F2.
+
+| Parameter | Waarde | Toelichting |
+|---|---|---|
+| `f1` | 25 mm | sample-side lens |
+| `f2` | 50 mm | detector-side lens |
+| `L` | 75 mm | = f1 + f2 (confocaal) |
+| `r0` | 8 mm | laserbundel-straal bij F1 (0.8 cm) |
+| `q` | 2 mm | object-side aperture parameter (paper-default) |
+| `r_diaphragm` | 0.2 mm | **detector-oppervlak zelf is de aperture**, Ø 0.4 mm |
+| `I0` | 1.0 (norm.) | slikt BS-verliezen + laser power; kalibreer door piek te meten |
+
+**Geen aparte pinhole nodig** — het actieve detector-oppervlak (Ø 0.4 mm)
+werkt zelf als de confocale aperture. `I0` is in het model een genormaliseerde
+piekwaarde die alle upstream verliezen (half-doorlatende spiegel 2×, lens-
+transmissies, sample-reflectiviteit) absorbeert, dus die hoef je niet apart te
+modelleren — je kalibreert hem gewoon één keer.
+
+**Resulterend meetbereik** bij deze config:
+
+| Grootheid | Waarde |
+|---|---|
+| Piek-positie dz1 | 1.000 mm (= q/2) |
+| Half-width (50%) | ±0.751 mm |
+| Buigpunt-offset (max gevoeligheid, I_m ≈ 77.7%) | ±0.510 mm |
+| Bereik binnen 95% van piek | ±0.361 mm |
+| Max |dI/ddz1| op buigpunt | ~1.31 / mm |
+| Detecteerbaar bij 0.1% intensiteitsruis | ~0.76 µm |
+
 ## Wat zit erin
 
 | Bestand | Doel |
@@ -20,7 +55,7 @@ rekent omgekeerd uit welke verplaatsing bij een gemeten intensiteit hoort
 | `tests/` | pytest regressiesuite (17 tests) |
 | `requirements.txt` | `numpy`, `matplotlib`, `scipy`, `pyyaml`, `pytest` |
 | `intensity_curve.png` | Output van `demo.py` |
-| `ranges_f1_only.png`, `ranges_matched.png` | Output van `demo_ranges.py` |
+| `ranges_f1_only.png` | Output van `demo_ranges.py` (f1-wisseling + 95% marges) |
 
 ## Installeren en draaien
 
