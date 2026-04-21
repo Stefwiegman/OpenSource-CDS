@@ -16,7 +16,7 @@ Run:  python demo_ranges.py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from confocal import half_width, intensity, peak_position
+from confocal import dz2_from_dz1, half_width, intensity, peak_position
 
 
 SAMPLE_TO_F2 = 100.0   # mm, vaste afstand sample -> f2 in onze opstelling
@@ -76,11 +76,15 @@ def plot_configs(configs, title, filename, show_band=True):
                 marker="*", s=140, color=color,
                 edgecolor="black", linewidth=0.8, zorder=5,
             )
+        bp_dz2 = abs(dz2_from_dz1(bp_off, f1, f2))
         print(
             f"  {label:18s}  L={L:5.1f}mm  peak={center:+.3f}mm  ({confocal})  "
-            f"hw50=±{hw:.4f}mm  hw95=±{hw95:.4f}mm  hw05=±{hw05:.4f}mm  "
-            f"buigpunt=±{bp_off:.4f}mm (werkpunten: "
-            f"{center - bp_off:+.3f}, {center + bp_off:+.3f} mm)"
+            f"hw50=±{hw:.4f}mm  hw95=±{hw95:.4f}mm  hw05=±{hw05:.4f}mm"
+        )
+        print(
+            f"    -> werkpunt (buigpunt): sample-offset=±{bp_off:.3f}mm "
+            f"(dz1 {center - bp_off:+.3f} of {center + bp_off:+.3f} mm)  "
+            f"|  detector-offset=±{bp_dz2:.3f}mm  (App. B)"
         )
     if show_band:
         ax.axhline(0.95, color="gray", linestyle=":", alpha=0.6, lw=1,
