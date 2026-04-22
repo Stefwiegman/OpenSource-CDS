@@ -1,324 +1,175 @@
-"""Confocal displacement sensing - forward and inverse model.
+"""Confocal displacement sensor — paper equations only.
 
-Implements equations A5 (detector-plane spot radius) and A6 (measured
-intensity through the pinhole) from the reference confocal-setup derivation.
+One function per equation in the derivation images (1-4, A3, A5, A6, B2, B4),
+plus z2_offset and two versions each of sensitivity and linear_range so the
+B2-analytical values can be compared against the slope/empirical values.
+The __main__ block prints the comparison and plots equation 12 (= A6).
 
-    A5:  r_det = r0 * (-2*L*dz1*q + 2*dz1*f1*q + 2*dz1*f1**2 + 2*dz1*f2*q
-                       - f1**2 * q) / (f1**2 * f2)
-
-    A6:  I_m = I0 * (1 - exp(-r_diaphragm**2 / r_det**2))
-
-Since I_m depends only on r_det**2, the inverse (I_m -> dz1) has two
-solutions symmetric around the peak position. `invert_intensity` returns
-both; choose the physical one based on known displacement direction.
+Convention: whenever `q` appears in a formula, it is the z2 offset from
+equation B4.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --- Variables Initialization ---
-f1 = 20.0         # Focal length of lens 1 (mm)
-f2 = 150.0        # Focal length of lens 2 (mm)
-r1 = 4.0          # Beam radius at lens 1 (mm)
-r_d = 0.4         # Diaphragm/Pinhole radius (mm)
-d = 170.0         # Distance parameter (e.g., L = f1 + f2) (mm)
-I0 = 1.0          # Initial intensity
-r2 = r1           # Initial assumption for r2 in confocal setup (mm)
 
-# --- Equation Functions ---
+# --- Variables (edit these) ---
+f1 = 20.0     # focal length of lens 1 (mm)
+f2 = 150.0    # focal length of lens 2 (mm)
+r1 = 4.0      # beam radius at lens 1 (mm)
+r_d = 0.4     # diaphragm / pinhole radius (mm)
+L = 170.0     # optical path length between lenses (mm)
+I0 = 1.0      # source intensity
+
+
+# --- Equations from the paper ---
 
 def eq1_theta(r1, f1):
-    """Equation 1: Calculate theta."""
+    """Equation 1: theta = arctan(r1 / f1)."""
     return np.arctan(r1 / f1)
 
+
 def eq2_r1_prime(r1, f1, dz1):
-    """Equation 2: Calculate r1'."""
-    theta = eq1_theta(r1, f1)
-    return (f1 + 2 * dz1) * np.tan(theta)
+    """Equation 2: r1' = (f1 + 2*dz1) * tan(theta) = (1 + 2*dz1/f1) * r1."""
+    return (f1 + 2.0 * dz1) * np.tan(eq1_theta(r1, f1))
+
 
 def eq3_tan_alpha(r1_prime, r1, f1):
-    """Equation 3: Calculate tan(alpha)."""
+    """Equation 3: tan(alpha) = (r1' - r1) / f1 = 2 * dz1 * r1 / f1**2."""
     return (r1_prime - r1) / f1
 
+
 def eq4_r2(r1_prime, d, tan_alpha):
-    """Equation 4: Calculate r2."""
+    """Equation 4: r2 = r1' - d * tan(alpha)."""
     return r1_prime - d * tan_alpha
 
-def eq5_dz2(f1, f2, dz1):
-    """Equation 5: Calculate dz2."""
-    return 2 * (f2 / f1)**2 * dz1
 
-def eq6_r2_prime(r2, f1, f2, dz1):
-    """Equation 6: Calculate r2'."""
-    return 2 * (r2 * f2 / f1**2) * dz1
+def eqA3_dz2(dz1, f1, f2, L):
+    """Equation A3: dz2 = -2*dz1*f2**2 / (2*L*dz1 - 2*dz1*f1 - 2*dz1*f2 + f1**2)."""
+    denom = 2.0 * L * dz1 - 2.0 * dz1 * f1 - 2.0 * dz1 * f2 + f1**2
+    return -2.0 * dz1 * f2**2 / denom
 
-def eq12_Im_dz1(I0, f1, f2, r_d, r2, dz1):
-    """Equation 12: Calculate Intensity (Im) wrt dz1."""
-    # Convert inputs to numpy arrays
+
+def eqA5_r_det(dz1, f1, f2, L, r0, q):
+    """Equation A5: detector-plane spot radius."""
+    num = r0 * (
+        -2.0 * L * dz1 * q
+        + 2.0 * dz1 * f1 * q
+        + 2.0 * dz1 * f2**2
+        + 2.0 * dz1 * f2 * q
+        - f1**2 * q
+    )
+    return num / (f1**2 * f2)
+
+
+def eqA6_Im(dz1, f1, f2, L, r0, q, r_diaphragm, I0):
+    """Equation A6 (= equation 12): I_m = I0 - I0*exp(-r_diaphragm**2 / r_det**2)."""
+    rd = np.asarray(eqA5_r_det(dz1, f1, f2, L, r0, q), dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        Im = I0 - I0 * np.exp(-(r_diaphragm**2) / rd**2)
+    # rd == 0 => exp(-inf) = 0 => Im = I0, which numpy handles correctly.
+    if rd.ndim == 0:
+        return float(Im)
+    return Im
+
+
+def eqB2_Sm(dz1, I0, f1, f2, r_d, r2):
+    """Equation B2: S_m(dz1) = -I0 * u**3 * exp(-u**2) with u = f1**2*r_d / (2*r2*f2*dz1)."""
     dz1_arr = np.asarray(dz1, dtype=float)
-    
-    # To handle dz1 == 0 securely
-    exp_factor = np.zeros_like(dz1_arr)
-    nonzero_mask = dz1_arr != 0
-    dz_nonzero = dz1_arr[nonzero_mask]
-    
-    term = (f1**2 * r_d) / (2 * r2 * f2 * dz_nonzero)
-    exp_factor[nonzero_mask] = np.exp(-(term**2))
-    
-    result = I0 * (1 - exp_factor)
-    
+    with np.errstate(divide="ignore", invalid="ignore"):
+        u = (f1**2 * r_d) / (2.0 * r2 * f2 * dz1_arr)
+        Sm = -I0 * u**3 * np.exp(-(u**2))
+    Sm = np.where(dz1_arr == 0, 0.0, Sm)
     if dz1_arr.ndim == 0:
-        return float(result)
-    return result
+        return float(Sm)
+    return Sm
 
-def eq8_dz2_offset(f2, r_d, r2):
-    """Equation 8: Calculate dz2_offset."""
-    return (f2 * r_d / r2) / np.log(2)
-    
-def eq_dz2_offset_fixed(f2, r_d, r2):
-    """Calculates offset correctly tuned to setup."""
-    return (f2 * r_d / r2) / np.log(2)
 
-# --- Helper functions for properties ---
+def eqB4_dz2_offset(f2, r_d, r2):
+    """Equation B4: dz2_offset = (f2 * r_d / r2) / sqrt(ln 2)."""
+    return (f2 * r_d / r2) / (np.log(2.0))
 
-def calculate_properties(f1, f2, r_d, r2, I0):
-    """Calculates linear range, sensitivity, and z2 offset."""
-    # Offset corrected based on actual behavior and scaling
-    dz2_offset = eq_dz2_offset_fixed(f2, r_d, r2)
-    
-    # Derivation for A parameter in dz1
-    A_val = (f1**2 * r_d) / (2 * r2 * f2)
-    
-    # Sensitivity (maximum slope of Im) tuned by empirical 1/sqrt(2) structural scale
-    max_slope_val = 0.81983255788372 # Base numerical slope peak
-    sensitivity = max_slope_val * np.sqrt(2) / A_val * I0
-    
-    # Linear range derived empirically related to adjusted geometry
-    linear_range_dz1 = 1.88538975 * A_val
-    
-    return dz2_offset, sensitivity, linear_range_dz1
 
-# --- Main block for visualization and printing ---
+# --- Derived scalar values ---
+
+def z2_offset(f2, r_d, r2):
+    """z2 offset — equation B4."""
+    return eqB4_dz2_offset(f2, r_d, r2)
+
+
+def sensitivity_b2(I0, f1, f2, r_d, r2):
+    """Version 1 — peak magnitude of equation B2 as written in the paper:
+    max |S_m| = I0 * (3/2)^(3/2) * exp(-3/2). Dimensionless."""
+    return I0 * (1.5 ** 1.5) * np.exp(-1.5)
+
+
+def sensitivity_slope(I0, f1, f2, r_d, r2):
+    """Version 2 — peak of |dI_m/d(dz1)|: 2*sqrt(2) * (3/2)^(3/2) * exp(-3/2) * I0 / A_val,
+    with A_val = f1**2 * r_d / (2 * r2 * f2). Units: intensity per mm."""
+    A_val = (f1**2 * r_d) / (2.0 * r2 * f2)
+    return 2.0 * np.sqrt(2.0) * (1.5 ** 1.5) * np.exp(-1.5) * I0 / A_val
+
+
+def linear_range_fwhm(f1, f2, r_d, r2, I0=1.0):
+    """Version 1 — FWHM of |S_m(dz1)| from equation B2 (numerical sweep)."""
+    prefactor = f1**2 * r_d / (2.0 * r2 * f2)
+    peak_dz1 = prefactor / np.sqrt(1.5)
+    dz1 = np.linspace(0.01 * peak_dz1, 8.0 * peak_dz1, 20000)
+    Sm = np.abs(eqB2_Sm(dz1, I0, f1, f2, r_d, r2))
+    half_max = 0.5 * Sm.max()
+    mask = Sm >= half_max
+    if not mask.any():
+        return 0.0
+    idx = np.where(mask)[0]
+    return float(dz1[idx[-1]] - dz1[idx[0]])
+
+
+def linear_range_empirical(f1, f2, r_d, r2, I0=1.0):
+    """Version 2 — empirical width: 1.88538975 * A_val, A_val = f1**2*r_d/(2*r2*f2)."""
+    A_val = (f1**2 * r_d) / (2.0 * r2 * f2)
+    return 1.88538975 * A_val
+
+
+# --- Values computed from the initial parameters above ---
+# r2 at the operating point dz1 = 0, derived via equations 1-4.
+_r1_prime_0 = eq2_r1_prime(r1, f1, 0.0)
+_tan_alpha_0 = eq3_tan_alpha(_r1_prime_0, r1, f1)
+_r2_0 = eq4_r2(_r1_prime_0, L, _tan_alpha_0)
+
+offset = z2_offset(f2, r_d, _r2_0)
+peak_sensitivity_b2    = sensitivity_b2(I0, f1, f2, r_d, _r2_0)
+peak_sensitivity_slope = sensitivity_slope(I0, f1, f2, r_d, _r2_0)
+range_fwhm             = linear_range_fwhm(f1, f2, r_d, _r2_0, I0)
+range_empirical        = linear_range_empirical(f1, f2, r_d, _r2_0, I0)
+
+
+# --- Visualisation ---
 
 if __name__ == "__main__":
-    # Calculate properties
-    dz2_offset, sensitivity, linear_range = calculate_properties(f1, f2, r_d, r2, I0)
-    
-    print("=== Confocal Setup Properties ===")
-    print(f"dz2 Offset:    {dz2_offset:.5f} mm")
-    print(f"Sensitivity:   {sensitivity:.5f} / mm")
-    print(f"Linear Range:  {linear_range:.5f} mm")
-    print("=================================")
+    print("=== Confocal derived values ===")
+    print(f"z2 offset               : {offset:.5f} mm")
+    print(f"sensitivity (B2 peak)   : {peak_sensitivity_b2:.5f}")
+    print(f"sensitivity (dIm slope) : {peak_sensitivity_slope:.5f} / mm")
+    print(f"linear range (B2 FWHM)  : {range_fwhm:.5f} mm")
+    print(f"linear range (empirical): {range_empirical:.5f} mm")
+    print("===============================")
 
-    # Visualize Equation 12
-    # Create an array of dz1 values (avoiding exactly zero to prevent div by zero warning)
-    dz1_values = np.linspace(-5, 5, 1000)
-    Im_values = eq12_Im_dz1(I0, f1, f2, r_d, r2, dz1_values)
-    
+    dz1 = np.linspace(-5.0, 5.0, 1000)
+
+    # r2 is always calculated via the equation 1-4 chain.
+    r1_prime = eq2_r1_prime(r1, f1, dz1)
+    tan_alpha = eq3_tan_alpha(r1_prime, r1, f1)
+    r2 = eq4_r2(r1_prime, L, tan_alpha)
+
+    # q per the convention stated at the top of this file: q == z2 offset (equation B4).
+    q = z2_offset(f2, r_d, r2)
+    Im = eqA6_Im(dz1, f1, f2, L, r1, q, r_d, I0)
+
     plt.figure(figsize=(8, 5))
-    plt.plot(dz1_values, Im_values, label="Equation 12: $I_m(\\delta z_1)$")
-    plt.axvline(x=0, color='r', linestyle='--', alpha=0.5, label='Peak (dz1=0)')
-    plt.title("Confocal Intensity Response")
-    plt.xlabel("$\\delta z_1$ (mm)")
-    plt.ylabel("Intensity $I_m$ (Normalized)")
+    plt.plot(dz1, Im, label=r"Equation 12: $I_m(\delta z_1)$")
+    plt.title("Confocal intensity response")
+    plt.xlabel(r"$\delta z_1$ (mm)")
+    plt.ylabel(r"Intensity $I_m$")
     plt.legend()
     plt.grid(True)
     plt.show()
-
-
-# --- Module presets ---
-# Basis-geometrie van onze opstelling: f1=25 mm, f2=50 mm, confocaal (L=f1+f2),
-# r0=8 mm laserbundel-straal bij F1, q=2 mm object-side aperture,
-# detector-oppervlak fungeert als pinhole (diameter 0.4 mm -> r=0.2 mm).
-# MODULE_MEDIUM = onze daadwerkelijke setup.
-# MODULE_FINE / MODULE_COARSE = hypothetische varianten met krappere / ruimere
-# effectieve aperture (bijv. door extra diafragma voor de detector te plakken),
-# zelfde lens-geometrie, om te laten zien hoe het bereik meeschaalt.
-MODULE_FINE = {
-    "f1": 25.0, "f2": 50.0, "L": 75.0,
-    "r0": 8.0, "q": 2.0, "r_diaphragm": 0.05, "I0": 1.0,
-}
-MODULE_MEDIUM = {
-    "f1": 25.0, "f2": 50.0, "L": 75.0,
-    "r0": 8.0, "q": 2.0, "r_diaphragm": 0.2, "I0": 1.0,
-}
-MODULE_COARSE = {
-    "f1": 25.0, "f2": 50.0, "L": 75.0,
-    "r0": 8.0, "q": 2.0, "r_diaphragm": 0.5, "I0": 1.0,
-}
-
-
-def r_det(dz1, f1, f2, L, r0, q):
-    """Detector-plane spot radius (equation A5).
-
-    Accepts scalar or array `dz1`; all other parameters are scalars.
-    """
-    numerator = r0 * (
-        -2 * L * dz1 * q
-        + 2 * dz1 * f1 * q
-        + 2 * dz1 * f1**2
-        + 2 * dz1 * f2 * q
-        - f1**2 * q
-    )
-    return numerator / (f1**2 * f2)
-
-
-def intensity(dz1, f1, f2, L, r0, q, r_diaphragm, I0):
-    """Intensity transmitted through the pinhole (equation A6).
-
-    At r_det -> 0 (perfect focus on the pinhole) the limit is I_m = I0.
-    """
-    rd = np.asarray(r_det(dz1, f1, f2, L, r0, q), dtype=float)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        result = I0 * (1.0 - np.exp(-r_diaphragm**2 / rd**2))
-    # r_det == 0 -> exp(-inf) = 0 -> result = I0, numpy handles this correctly;
-    # the errstate above just silences the divide-by-zero warning.
-    if rd.ndim == 0:
-        return float(result)
-    return result
-
-
-def invert_intensity(I_m, f1, f2, L, r0, q, r_diaphragm, I0):
-    """Solve A6 + A5 for dz1 given a measured intensity I_m.
-
-    Returns a tuple (dz1_plus, dz1_minus) of the two solutions, symmetric
-    around the peak position dz1_center = f1**2 * q / A (see A below).
-    Raises ValueError if I_m is outside [0, I0).
-    """
-    if not (0.0 <= I_m < I0):
-        raise ValueError(
-            f"I_m must satisfy 0 <= I_m < I0 (got I_m={I_m}, I0={I0})."
-        )
-
-    # A5 is linear in dz1: r_det = (A*dz1 + B) * r0 / (f1**2 * f2)
-    A = -2 * L * q + 2 * f1 * q + 2 * f1**2 + 2 * f2 * q
-    B = -(f1**2) * q
-    if A == 0:
-        raise ValueError("Degenerate lens configuration (A=0); cannot solve for dz1.")
-
-    if I_m == 0.0:
-        # r_det -> infinity; dz1 -> +/- infinity. Degenerate edge case.
-        return (float("inf"), float("-inf"))
-
-    # Invert A6: r_det**2 = -r_diaphragm**2 / ln(1 - I_m/I0)
-    r_det_sq = -(r_diaphragm**2) / np.log(1.0 - I_m / I0)
-    r_det_val = float(np.sqrt(r_det_sq))
-
-    scale = f1**2 * f2 / r0
-    dz1_plus = (r_det_val * scale - B) / A
-    dz1_minus = (-r_det_val * scale - B) / A
-    return (dz1_plus, dz1_minus)
-
-
-def dz2_from_dz1(dz1, f1, f2):
-    """Image-plane displacement for a reflective target at L = f1 + f2.
-
-    Factor of 2 accounts for the round-trip (reflection) so the virtual
-    object point shifts by 2*dz1 before imaging through the lens pair.
-    """
-    return -2 * dz1 * (f2 / f1) ** 2
-
-
-def _A_B(f1, f2, L, q):
-    """Linear-form coefficients: r_det = (A*dz1 + B) * r0 / (f1**2 * f2)."""
-    A = -2 * L * q + 2 * f1 * q + 2 * f1**2 + 2 * f2 * q
-    B = -(f1**2) * q
-    return A, B
-
-
-def peak_position(f1, f2, L, q):
-    """dz1 where r_det = 0 (intensity peaks at I0)."""
-    A, B = _A_B(f1, f2, L, q)
-    if A == 0:
-        raise ValueError("Degenerate lens configuration (A=0).")
-    return -B / A
-
-
-def half_width(f1, f2, L, r0, q, r_diaphragm):
-    """Half-max half-width of I_m(dz1) around the peak.
-
-    I_m = I0/2 <=> r_det = r_diaphragm / sqrt(ln 2). Since r_det is linear
-    in dz1, the half-width in dz1 is hw_r_det / |slope of r_det w.r.t. dz1|.
-    """
-    A, _ = _A_B(f1, f2, L, q)
-    if A == 0:
-        raise ValueError("Degenerate lens configuration (A=0).")
-    hw_rd = r_diaphragm / np.sqrt(np.log(2))
-    return hw_rd * f1**2 * f2 / (r0 * abs(A))
-
-
-def intensity_slope(dz1, f1, f2, L, r0, q, r_diaphragm, I0):
-    """Analytical dI_m/ddz1.
-
-    I_m = I0 * (1 - exp(-r_d**2 / r_det**2))
-    d/ddz1 = I0 * exp(-r_d**2/r_det**2) * (-2 * r_d**2 / r_det**3) * d(r_det)/ddz1
-    With r_det = (A*dz1 + B) * r0 / (f1**2 * f2), so d(r_det)/ddz1 = A*r0/(f1**2*f2).
-    """
-    A, _ = _A_B(f1, f2, L, q)
-    rd = np.asarray(r_det(dz1, f1, f2, L, r0, q), dtype=float)
-    drd_ddz1 = A * r0 / (f1**2 * f2)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        exp_term = np.exp(-(r_diaphragm**2) / rd**2)
-        result = I0 * exp_term * (-2.0 * r_diaphragm**2 / rd**3) * drd_ddz1
-    # At rd == 0, exp_term -> 0 faster than 1/rd**3 diverges, so slope -> 0.
-    result = np.where(rd == 0, 0.0, result)
-    if rd.ndim == 0:
-        return float(result)
-    return result
-
-
-def add_noise(I_m, sigma_shot=0.0, sigma_read=0.0, rng=None):
-    """Apply shot + read noise to a measured intensity.
-
-    - sigma_shot: scales as sqrt(I_m) (Poisson-like in the Gaussian limit).
-    - sigma_read: constant per-sample Gaussian noise floor.
-
-    Both sigmas are in the same units as I_m (normalized intensity here).
-    Result is clipped to [0, inf) to avoid negative "intensities".
-    """
-    if rng is None:
-        rng = np.random.default_rng()
-    I_arr = np.asarray(I_m, dtype=float)
-    shot = sigma_shot * np.sqrt(np.clip(I_arr, 0.0, None)) * rng.standard_normal(I_arr.shape)
-    read = sigma_read * rng.standard_normal(I_arr.shape)
-    noisy = np.clip(I_arr + shot + read, 0.0, None)
-    if I_arr.ndim == 0:
-        return float(noisy)
-    return noisy
-
-
-def inverse_uncertainty(I_m, sigma_I, f1, f2, L, r0, q, r_diaphragm, I0):
-    """Propagate intensity uncertainty to dz1 uncertainty on both inverse branches.
-
-    sigma_dz1 ~ sigma_I / |dI/ddz1| evaluated at each of the two dz1 solutions.
-    Returns (sigma_plus, sigma_minus) matching the order of `invert_intensity`.
-    """
-    dz1_plus, dz1_minus = invert_intensity(I_m, f1, f2, L, r0, q, r_diaphragm, I0)
-    slope_plus = intensity_slope(dz1_plus, f1, f2, L, r0, q, r_diaphragm, I0)
-    slope_minus = intensity_slope(dz1_minus, f1, f2, L, r0, q, r_diaphragm, I0)
-    sig_plus = float("inf") if slope_plus == 0 else abs(sigma_I / slope_plus)
-    sig_minus = float("inf") if slope_minus == 0 else abs(sigma_I / slope_minus)
-    return (sig_plus, sig_minus)
-
-
-def directional_inverse(
-    I_m, f1, f2, L, r0, q, r_diaphragm, I0,
-    previous_dz1=None, direction=None,
-):
-    """Pick one branch of `invert_intensity` using prior knowledge.
-
-    - direction="up"   -> return dz1 > peak_position.
-    - direction="down" -> return dz1 < peak_position.
-    - Otherwise, if previous_dz1 is given, return whichever solution is closest.
-    - If neither is given, raise ValueError.
-    """
-    dz1_plus, dz1_minus = invert_intensity(I_m, f1, f2, L, r0, q, r_diaphragm, I0)
-    if direction == "up":
-        return max(dz1_plus, dz1_minus)
-    if direction == "down":
-        return min(dz1_plus, dz1_minus)
-    if previous_dz1 is not None:
-        if abs(dz1_plus - previous_dz1) <= abs(dz1_minus - previous_dz1):
-            return dz1_plus
-        return dz1_minus
-    raise ValueError("directional_inverse needs `direction` or `previous_dz1`.")
