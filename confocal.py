@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 # --- Variables (edit these) ---
 f1 = 20.0     # focal length of lens 1 (mm)
-f2 = 150.0    # focal length of lens 2 (mm)
+f2 = 250.0    # focal length of lens 2 (mm)
 r1 = 4.0      # beam radius at lens 1 (mm)
 r_d = 0.4     # diaphragm / pinhole radius (mm)
 L = f1 + f2     # optical path length between lenses (mm)
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     print(f"linear range (empirical): {range_empirical:.5f} mm")
     print("===============================")
 
-    dz1 = np.linspace(-5.0, 5.0, 1000)
+    dz1 = np.linspace(-0.05, 0.05, 1000)   # ±50 µm in mm
 
     # q is frozen at the operating point dz1 = 0 (r2 computed once via eq 1-4).
     # The paper treats q as a fixed system parameter; recomputing it per-dz1
@@ -167,9 +167,9 @@ if __name__ == "__main__":
     Im = eqA6_Im(dz1, f1, f2, L, r1, q, r_d, I0)
 
     plt.figure(figsize=(8, 5))
-    plt.plot(dz1, Im, label=r"Equation 12: $I_m(\delta z_1)$")
+    plt.plot(dz1 * 1000.0, Im, label=r"Equation 12: $I_m(\delta z_1)$")
     plt.title("Confocal intensity response")
-    plt.xlabel(r"$\delta z_1$ (mm)")
+    plt.xlabel(r"$\delta z_1$ ($\mu$m)")
     plt.ylabel(r"Intensity $I_m$")
     plt.legend()
     plt.grid(True)
