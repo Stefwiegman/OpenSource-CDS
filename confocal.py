@@ -97,10 +97,12 @@ def z2_offset(f2, r_d, r2):
     return eqB4_dz2_offset(f2, r_d, r2)
 
 
-def sensitivity_b2(I0, f1, f2, r_d, r2):
-    """Version 1 — peak magnitude of equation B2 as written in the paper:
-    max |S_m| = I0 * (3/2)^(3/2) * exp(-3/2). Dimensionless."""
-    return I0 * (1.5 ** 1.5) * np.exp(-1.5)
+def sensitivity_b2(I0, f1, f2, r_d, r2, dz1):
+    """Equation B2 as written:
+    S_m(dz1) = -I0 * (f1**2 * r_d / (2*r2*f2*dz1))**3
+              * exp(-(f1**2 * r_d / (2*r2*f2*dz1))**2)."""
+    u = (f1**2 * r_d) / (2.0 * r2 * f2 * dz1)
+    return -I0 * u**3 * np.exp(-(u**2))
 
 
 def sensitivity_slope(I0, f1, f2, r_d, r2):
@@ -137,7 +139,9 @@ _tan_alpha_0 = eq3_tan_alpha(_r1_prime_0, r1, f1)
 _r2_0 = eq4_r2(_r1_prime_0, L, _tan_alpha_0)
 
 offset = z2_offset(f2, r_d, _r2_0)
-peak_sensitivity_b2    = sensitivity_b2(I0, f1, f2, r_d, _r2_0)
+# Evaluate B2 at its peak location: dz1* = f1**2 * r_d / (2*r2*f2*sqrt(3/2)).
+_dz1_peak_b2 = (f1**2 * r_d) / (2.0 * _r2_0 * f2 * np.sqrt(1.5))
+peak_sensitivity_b2    = sensitivity_b2(I0, f1, f2, r_d, _r2_0, _dz1_peak_b2)
 peak_sensitivity_slope = sensitivity_slope(I0, f1, f2, r_d, _r2_0)
 range_fwhm             = linear_range_fwhm(f1, f2, r_d, _r2_0, I0)
 range_empirical        = linear_range_empirical(f1, f2, r_d, _r2_0, I0)
