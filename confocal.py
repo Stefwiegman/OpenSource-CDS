@@ -18,7 +18,7 @@ f1 = 20.0     # focal length of lens 1 (mm)
 f2 = 150.0    # focal length of lens 2 (mm)
 r1 = 4.0      # beam radius at lens 1 (mm)
 r_d = 0.4     # diaphragm / pinhole radius (mm)
-L = 170.0     # optical path length between lenses (mm)
+L = f1 + f2     # optical path length between lenses (mm)
 I0 = 1.0      # source intensity
 
 
@@ -156,13 +156,10 @@ if __name__ == "__main__":
 
     dz1 = np.linspace(-5.0, 5.0, 1000)
 
-    # r2 is always calculated via the equation 1-4 chain.
-    r1_prime = eq2_r1_prime(r1, f1, dz1)
-    tan_alpha = eq3_tan_alpha(r1_prime, r1, f1)
-    r2 = eq4_r2(r1_prime, L, tan_alpha)
-
-    # q per the convention stated at the top of this file: q == z2 offset (equation B4).
-    q = z2_offset(f2, r_d, r2)
+    # q is frozen at the operating point dz1 = 0 (r2 computed once via eq 1-4).
+    # The paper treats q as a fixed system parameter; recomputing it per-dz1
+    # would introduce a pole at r2 = 0 and a spurious secondary peak.
+    q = z2_offset(f2, r_d, _r2_0)
     Im = eqA6_Im(dz1, f1, f2, L, r1, q, r_d, I0)
 
     plt.figure(figsize=(8, 5))
