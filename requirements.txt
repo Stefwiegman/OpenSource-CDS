@@ -6,3 +6,5 @@ pytest
 moku
 pandas
 opencv-python
+PySide6
+pyserial

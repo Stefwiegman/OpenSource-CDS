@@ -1,176 +1,109 @@
-"""Confocal displacement sensor — paper equations only.
+"""Confocal sensor — only formula A6 and what we derive from it.
 
-One function per equation in the derivation images (1-4, A3, A5, A6, B2, B4),
-plus z2_offset and two versions each of sensitivity and linear_range so the
-B2-analytical values can be compared against the slope/empirical values.
-The __main__ block prints the comparison and plots equation 12 (= A6).
+Equation A6:
+    I_m = I0 - I0 * exp(-r_diaphragm**2 / r_det**2)
 
-Convention: whenever `q` appears in a formula, it is the z2 offset from
-equation B4.
+with r_det (equation A5) rewritten on the common denominator f1**2 * f2:
+    r_det = r0/(f1**2*f2) * (2*dz1*(q*(f1+f2-L) + f2**2) - q*f1**2)
+
+Four functions:
+  * compute_q   — solve A6 for q with dz1 = 0 and I_m = I0/2
+  * compute_Im  — evaluate A6
+  * compute_dz1 — invert A6 for dz1 given I_m (returns both branches)
+  * compute_Sm  — S_m = d(I_m)/d(dz1), derived symbolically
 """
 
 import numpy as np
+import sympy as sp
 import matplotlib.pyplot as plt
 
 
-# --- Variables (edit these) ---
-f1 = 20.0     # focal length of lens 1 (mm)
-f2 = 250.0    # focal length of lens 2 (mm)
-r1 = 4.0      # beam radius at lens 1 (mm)
-r_d = 0.4     # diaphragm / pinhole radius (mm)
-L = f1 + f2     # optical path length between lenses (mm)
-I0 = 1.0      # source intensity
+# --- Default parameters (mm) ---
+f1 = 20.0
+f2 = 250.0
+r0 = 4.0           # beam radius at lens 1 (r1 in the paper)
+r_d = 0.4          # diaphragm radius (r_diaphragm)
+L = f1 + f2
+I0 = 1.0
 
 
-# --- Equations from the paper ---
+# --- Symbolic model of A6 ---
+_dz1, _q, _f1, _f2, _L, _r0, _rd, _I0 = sp.symbols(
+    "dz1 q f1 f2 L r0 rd I0", real=True
+)
+_rdet_sym = _r0 / (_f1**2 * _f2) * (
+    2 * _dz1 * (_q * (_f1 + _f2 - _L) + _f2**2) - _q * _f1**2
+)
+_Im_sym = _I0 - _I0 * sp.exp(-_rd**2 / _rdet_sym**2)
+_Sm_sym = sp.diff(_Im_sym, _dz1)
 
-def eq1_theta(r1, f1):
-    """Equation 1: theta = arctan(r1 / f1)."""
-    return np.arctan(r1 / f1)
-
-
-def eq2_r1_prime(r1, f1, dz1):
-    """Equation 2: r1' = (f1 + 2*dz1) * tan(theta) = (1 + 2*dz1/f1) * r1."""
-    return (f1 + 2.0 * dz1) * np.tan(eq1_theta(r1, f1))
-
-
-def eq3_tan_alpha(r1_prime, r1, f1):
-    """Equation 3: tan(alpha) = (r1' - r1) / f1 = 2 * dz1 * r1 / f1**2."""
-    return (r1_prime - r1) / f1
-
-
-def eq4_r2(r1_prime, d, tan_alpha):
-    """Equation 4: r2 = r1' - d * tan(alpha)."""
-    return r1_prime - d * tan_alpha
+_Im_func = sp.lambdify(
+    (_dz1, _q, _f1, _f2, _L, _r0, _rd, _I0), _Im_sym, "numpy"
+)
+_Sm_func = sp.lambdify(
+    (_dz1, _q, _f1, _f2, _L, _r0, _rd, _I0), _Sm_sym, "numpy"
+)
 
 
-def eqA3_dz2(dz1, f1, f2, L):
-    """Equation A3: dz2 = -2*dz1*f2**2 / (2*L*dz1 - 2*dz1*f1 - 2*dz1*f2 + f1**2)."""
-    denom = 2.0 * L * dz1 - 2.0 * dz1 * f1 - 2.0 * dz1 * f2 + f1**2
-    return -2.0 * dz1 * f2**2 / denom
+def compute_q(f1=f1, f2=f2, L=L, r0=r0, r_d=r_d, I0=I0):
+    """Solve A6 for q at dz1 = 0, I_m = I0/2.
+
+    At dz1 = 0:  r_det = -q*r0/f2, so r_det**2 = q**2 * r0**2 / f2**2.
+    I_m = I0/2  =>  exp(-r_d**2 / r_det**2) = 1/2
+                =>  r_det**2 = r_d**2 / ln 2
+                =>  q = f2 * r_d / (r0 * sqrt(ln 2)).
+    """
+    return f2 * r_d / (r0 * np.sqrt(np.log(2.0)))
 
 
-def eqA5_r_det(dz1, f1, f2, L, r0, q):
-    """Equation A5: detector-plane spot radius."""
-    num = r0 * (
-        -2.0 * L * dz1 * q
-        + 2.0 * dz1 * f1 * q
-        + 2.0 * dz1 * f2**2
-        + 2.0 * dz1 * f2 * q
-        - f1**2 * q
-    )
-    return num / (f1**2 * f2)
+def compute_Im(dz1, q, f1=f1, f2=f2, L=L, r0=r0, r_d=r_d, I0=I0):
+    """Equation A6: I_m as a function of dz1."""
+    return _Im_func(dz1, q, f1, f2, L, r0, r_d, I0)
 
 
-def eqA6_Im(dz1, f1, f2, L, r0, q, r_diaphragm, I0):
-    """Equation A6 (= equation 12): I_m = I0 - I0*exp(-r_diaphragm**2 / r_det**2)."""
-    rd = np.asarray(eqA5_r_det(dz1, f1, f2, L, r0, q), dtype=float)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        Im = I0 - I0 * np.exp(-(r_diaphragm**2) / rd**2)
-    # rd == 0 => exp(-inf) = 0 => Im = I0, which numpy handles correctly.
-    if rd.ndim == 0:
-        return float(Im)
-    return Im
+def compute_dz1(Im, q, f1=f1, f2=f2, L=L, r0=r0, r_d=r_d, I0=I0):
+    """Invert A6 for dz1 given I_m.
+
+    From A6:  r_det**2 = r_d**2 / ln(I0 / (I0 - I_m)).
+    r_det is linear in dz1, so there are two branches (±|r_det|).
+    Returns (dz1_minus, dz1_plus).
+    """
+    Im_arr = np.asarray(Im, dtype=float)
+    if np.any(Im_arr <= 0.0) or np.any(Im_arr >= I0):
+        raise ValueError("I_m must satisfy 0 < I_m < I0.")
+    rdet_abs = r_d / np.sqrt(np.log(I0 / (I0 - Im_arr)))
+    A = 2.0 * (q * (f1 + f2 - L) + f2**2)
+    base = q * f1**2 / A
+    offset = rdet_abs * f1**2 * f2 / (r0 * A)
+    return base - offset, base + offset
 
 
-def eqB2_Sm(dz1, I0, f1, f2, r_d, r2):
-    """Equation B2: S_m(dz1) = -I0 * u**3 * exp(-u**2) with u = f1**2*r_d / (2*r2*f2*dz1)."""
-    dz1_arr = np.asarray(dz1, dtype=float)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        u = (f1**2 * r_d) / (2.0 * r2 * f2 * dz1_arr)
-        Sm = -I0 * u**3 * np.exp(-(u**2))
-    Sm = np.where(dz1_arr == 0, 0.0, Sm)
-    if dz1_arr.ndim == 0:
-        return float(Sm)
-    return Sm
+def compute_Sm(dz1, q, f1=f1, f2=f2, L=L, r0=r0, r_d=r_d, I0=I0):
+    """S_m = d(I_m)/d(dz1), obtained by symbolic differentiation of A6."""
+    return _Sm_func(dz1, q, f1, f2, L, r0, r_d, I0)
 
-
-def eqB4_dz2_offset(f2, r_d, r2):
-    """Equation B4: dz2_offset = (f2 * r_d / r2) / sqrt(ln 2)."""
-    return (f2 * r_d / r2) / (np.log(2.0))
-
-
-# --- Derived scalar values ---
-
-def z2_offset(f2, r_d, r2):
-    """z2 offset — equation B4."""
-    return eqB4_dz2_offset(f2, r_d, r2)
-
-
-def sensitivity_b2(I0, f1, f2, r_d, r2, dz1):
-    """Equation B2 as written:
-    S_m(dz1) = -I0 * (f1**2 * r_d / (2*r2*f2*dz1))**3
-              * exp(-(f1**2 * r_d / (2*r2*f2*dz1))**2)."""
-    u = (f1**2 * r_d) / (2.0 * r2 * f2 * dz1)
-    return -I0 * u**3 * np.exp(-(u**2))
-
-
-def sensitivity_slope(I0, f1, f2, r_d, r2):
-    """Version 2 — peak of |dI_m/d(dz1)|: 2*sqrt(2) * (3/2)^(3/2) * exp(-3/2) * I0 / A_val,
-    with A_val = f1**2 * r_d / (2 * r2 * f2). Units: intensity per mm."""
-    A_val = (f1**2 * r_d) / (2.0 * r2 * f2)
-    return 2.0 * np.sqrt(2.0) * (1.5 ** 1.5) * np.exp(-1.5) * I0 / A_val
-
-
-def linear_range_fwhm(f1, f2, r_d, r2, I0=1.0):
-    """Version 1 — FWHM of |S_m(dz1)| from equation B2 (numerical sweep)."""
-    prefactor = f1**2 * r_d / (2.0 * r2 * f2)
-    peak_dz1 = prefactor / np.sqrt(1.5)
-    dz1 = np.linspace(0.01 * peak_dz1, 8.0 * peak_dz1, 20000)
-    Sm = np.abs(eqB2_Sm(dz1, I0, f1, f2, r_d, r2))
-    half_max = 0.5 * Sm.max()
-    mask = Sm >= half_max
-    if not mask.any():
-        return 0.0
-    idx = np.where(mask)[0]
-    return float(dz1[idx[-1]] - dz1[idx[0]])
-
-
-def linear_range_empirical(f1, f2, r_d, r2, I0=1.0):
-    """Version 2 — empirical width: 1.88538975 * A_val, A_val = f1**2*r_d/(2*r2*f2)."""
-    A_val = (f1**2 * r_d) / (2.0 * r2 * f2)
-    return 1.88538975 * A_val
-
-
-# --- Values computed from the initial parameters above ---
-# r2 at the operating point dz1 = 0, derived via equations 1-4.
-_r1_prime_0 = eq2_r1_prime(r1, f1, 0.0)
-_tan_alpha_0 = eq3_tan_alpha(_r1_prime_0, r1, f1)
-_r2_0 = eq4_r2(_r1_prime_0, L, _tan_alpha_0)
-
-offset = z2_offset(f2, r_d, _r2_0)
-# Evaluate B2 at its peak location: dz1* = f1**2 * r_d / (2*r2*f2*sqrt(3/2)).
-_dz1_peak_b2 = (f1**2 * r_d) / (2.0 * _r2_0 * f2 * np.sqrt(1.5))
-peak_sensitivity_b2    = sensitivity_b2(I0, f1, f2, r_d, _r2_0, _dz1_peak_b2)
-peak_sensitivity_slope = sensitivity_slope(I0, f1, f2, r_d, _r2_0)
-range_fwhm             = linear_range_fwhm(f1, f2, r_d, _r2_0, I0)
-range_empirical        = linear_range_empirical(f1, f2, r_d, _r2_0, I0)
-
-
-# --- Visualisation ---
 
 if __name__ == "__main__":
-    print("=== Confocal derived values ===")
-    print(f"z2 offset               : {offset:.5f} mm")
-    print(f"sensitivity (B2 peak)   : {peak_sensitivity_b2:.5f}")
-    print(f"sensitivity (dIm slope) : {peak_sensitivity_slope:.5f} / mm")
-    print(f"linear range (B2 FWHM)  : {range_fwhm:.5f} mm")
-    print(f"linear range (empirical): {range_empirical:.5f} mm")
-    print("===============================")
+    q_val = compute_q()
+    print(f"q (dz1=0, I_m=0.5*I0): {q_val:.6f} mm")
 
-    dz1 = np.linspace(-0.05, 0.05, 1000)   # ±50 µm in mm
+    dz1 = np.linspace(-0.05, 0.05, 1001)   # ±50 µm in mm
+    Im = compute_Im(dz1, q_val)
+    Sm = compute_Sm(dz1, q_val)
 
-    # q is frozen at the operating point dz1 = 0 (r2 computed once via eq 1-4).
-    # The paper treats q as a fixed system parameter; recomputing it per-dz1
-    # would introduce a pole at r2 = 0 and a spurious secondary peak.
-    q = z2_offset(f2, r_d, _r2_0)
-    Im = eqA6_Im(dz1, f1, f2, L, r1, q, r_d, I0)
+    fig, ax1 = plt.subplots(figsize=(9, 5))
+    l1, = ax1.plot(dz1 * 1e3, Im, "C0", label=r"$I_m$ (A6)")
+    ax1.set_xlabel(r"$\delta z_1$ ($\mu$m)")
+    ax1.set_ylabel(r"$I_m$", color="C0")
+    ax1.tick_params(axis="y", labelcolor="C0")
+    ax1.grid(True)
 
-    plt.figure(figsize=(8, 5))
-    plt.plot(dz1 * 1000.0, Im, label=r"Equation 12: $I_m(\delta z_1)$")
-    plt.title("Confocal intensity response")
-    plt.xlabel(r"$\delta z_1$ ($\mu$m)")
-    plt.ylabel(r"Intensity $I_m$")
-    plt.legend()
-    plt.grid(True)
+    ax2 = ax1.twinx()
+    l2, = ax2.plot(dz1 * 1e3, Sm, "C3", label=r"$S_m = dI_m/d\delta z_1$")
+    ax2.set_ylabel(r"$S_m$ (1/mm)", color="C3")
+    ax2.tick_params(axis="y", labelcolor="C3")
+
+    ax1.legend(handles=[l1, l2], loc="best")
+    plt.title("Equation A6 and its derivative")
+    plt.tight_layout()
     plt.show()
