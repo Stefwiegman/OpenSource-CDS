@@ -1,5 +1,8 @@
 numpy
-matplotlib
+matplotlib>=3.9
 scipy
 pyyaml
 pytest
+moku
+pandas
+opencv-python
