@@ -24,8 +24,26 @@ CSV_PATH = "gridsearch_results.csv"
 
 
 # Grid in mm.
-F1_VALUES = np.arange(5.0, 40.0 + 1e-9, 5.0)      # 0.5 - 4.0 cm, step 0.5 cm
-F2_VALUES = np.arange(100.0, 250.0 + 1e-9, 50.0)  # 10 - 25 cm, step 5 cm
+F1_VALUES = np.array([
+    10,
+    16,
+    20,
+    25,
+    30,
+    40,
+    50,
+    60
+])
+F2_VALUES = np.array([
+    60,
+    100,
+    150,
+    160,
+    200
+])
+
+F1_VALUES_TEST = np.arange(5.0, 40.0 + 1e-9, 5.0)      # 0.5 - 4.0 cm, step 0.5 cm
+F2_VALUES_TEST = np.arange(100.0, 250.0 + 1e-9, 50.0)  # 10 - 25 cm, step 5 cm
 
 
 # Threshold fractions of I0. Adjust these to retune the reported ranges; the
