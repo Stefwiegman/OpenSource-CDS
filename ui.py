@@ -39,10 +39,12 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 
-CAMERA_INDEX = 1
+CAMERA_INDEX = 0
 DEFAULT_PORT = "COM3"
 BAUD = 9600
-MAX_STEPS = 2048
+MAX_STEPS = 4096
+DEFAULT_SPEED = 500   # AccelStepper setMaxSpeed (steps/s)
+MAX_SPEED = 2000
 
 
 # -------------------- Camera --------------------
@@ -115,10 +117,21 @@ class MotorPanel(QGroupBox):
         self.connect_btn.clicked.connect(self._toggle_connect)
         layout.addWidget(self.connect_btn, 0, 3)
 
+        layout.addWidget(QLabel("Snelheid:"), 1, 0)
+        self.speed_input = QSpinBox()
+        self.speed_input.setRange(10, MAX_SPEED)
+        self.speed_input.setSingleStep(50)
+        self.speed_input.setValue(DEFAULT_SPEED)
+        self.speed_input.setSuffix(" stappen/s")
+        layout.addWidget(self.speed_input, 1, 1, 1, 2)
+        self.speed_btn = QPushButton("Stuur")
+        self.speed_btn.clicked.connect(self._send_speed)
+        layout.addWidget(self.speed_btn, 1, 3)
+
         self.step_inputs: list[QSpinBox] = []
         self.target_labels: list[QLabel] = []
         for i in range(3):
-            layout.addWidget(QLabel(f"Motor {i + 1}"), i + 1, 0)
+            layout.addWidget(QLabel(f"Motor {i + 1}"), i + 2, 0)
 
             arrows = QWidget()
             arrows_layout = QVBoxLayout(arrows)
@@ -132,7 +145,7 @@ class MotorPanel(QGroupBox):
             down_btn.clicked.connect(lambda _c, n=i: self._jog(n, -1))
             arrows_layout.addWidget(up_btn)
             arrows_layout.addWidget(down_btn)
-            layout.addWidget(arrows, i + 1, 1)
+            layout.addWidget(arrows, i + 2, 1)
 
             spin = QSpinBox()
             spin.setRange(10, MAX_STEPS)
@@ -140,11 +153,11 @@ class MotorPanel(QGroupBox):
             spin.setValue(1000)
             spin.setSuffix(" stappen")
             spin.setFixedWidth(130)
-            layout.addWidget(spin, i + 1, 2)
+            layout.addWidget(spin, i + 2, 2)
 
             tlbl = QLabel("target: 0")
             tlbl.setStyleSheet("color: gray;")
-            layout.addWidget(tlbl, i + 1, 3)
+            layout.addWidget(tlbl, i + 2, 3)
 
             self.step_inputs.append(spin)
             self.target_labels.append(tlbl)
@@ -156,13 +169,13 @@ class MotorPanel(QGroupBox):
             "QPushButton:pressed { background-color: #922b21; }"
         )
         self.stop_btn.clicked.connect(self._stop_all)
-        layout.addWidget(self.stop_btn, 4, 0, 1, 4)
+        layout.addWidget(self.stop_btn, 5, 0, 1, 4)
 
         self.status = QLabel("Niet verbonden.")
         self.status.setStyleSheet("color: gray;")
-        layout.addWidget(self.status, 5, 0, 1, 4)
+        layout.addWidget(self.status, 6, 0, 1, 4)
 
-        layout.setRowStretch(6, 1)
+        layout.setRowStretch(7, 1)
 
     def _populate_ports(self) -> None:
         self.port_combo.clear()
@@ -190,6 +203,12 @@ class MotorPanel(QGroupBox):
         self.connect_btn.setText("Ontkoppel")
         self.status.setText(f"Verbonden met {port} @ {BAUD} baud.")
         self.status.setStyleSheet("color: green;")
+        self._send_speed()
+
+    def _send_speed(self) -> None:
+        speed = self.speed_input.value()
+        cmd = f"SPEED {speed}\n"
+        self._write(cmd, ok_msg=f"Snelheid gezet op {speed} stappen/s.")
 
     def _jog(self, motor_index: int, direction: int) -> None:
         step_count = self.step_inputs[motor_index].value()
@@ -200,11 +219,24 @@ class MotorPanel(QGroupBox):
         self._write(cmd, ok_msg=f"Verzonden: {cmd.strip()}")
 
     def _stop_all(self) -> None:
-        if not self._write("STOP\n", ok_msg="STOP verzonden.", error_style=True):
+        if not (self.serial and self.serial.is_open):
+            self.status.setText("Niet verbonden.")
+            self.status.setStyleSheet("color: red;")
             return
+        try:
+            # Drop pending jog commands so STOP isn't queued behind them.
+            self.serial.reset_output_buffer()
+            self.serial.write(b"STOP\n")
+            self.serial.flush()
+        except serial.SerialException as e:
+            self.status.setText(f"Schrijf-fout: {e}")
+            self.status.setStyleSheet("color: red;")
+            return
+        # Position is unknown after an emergency stop — don't claim it's 0.
         for i, lbl in enumerate(self.target_labels):
             self.targets[i] = 0
-            lbl.setText("target: 0")
+            lbl.setText("target: ? (gestopt)")
+        self.status.setText("STOP verzonden — motoren gestopt op onbekende positie.")
         self.status.setStyleSheet("color: #c0392b; font-weight: bold;")
 
     def _write(self, cmd: str, ok_msg: str, error_style: bool = False) -> bool:
@@ -214,6 +246,7 @@ class MotorPanel(QGroupBox):
             return False
         try:
             self.serial.write(cmd.encode("ascii"))
+            self.serial.flush()
         except serial.SerialException as e:
             self.status.setText(f"Schrijf-fout: {e}")
             self.status.setStyleSheet("color: red;")
