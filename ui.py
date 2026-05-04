@@ -219,11 +219,7 @@ class MotorPanel(QGroupBox):
 
         # ---- STOP ----
         self.stop_btn = QPushButton("STOP  ■  alle motoren direct stoppen")
-        self.stop_btn.setStyleSheet(
-            "QPushButton { background-color: #c0392b; color: white;"
-            " font-weight: bold; padding: 10px; font-size: 14px; }"
-            "QPushButton:pressed { background-color: #922b21; }"
-        )
+        self.stop_btn.setObjectName("DangerButton")
         self.stop_btn.clicked.connect(self._stop_all)
         layout.addWidget(self.stop_btn, cal_row + 1, 0, 1, 5)
 

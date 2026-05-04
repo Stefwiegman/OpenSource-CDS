@@ -1,9 +1,0 @@
-{
-  "version": "4.2.1",
-  "description": "4.2.1 Feature release",
-  "instruments": "20256",
-  "firmware": "639",
-  "features": {
-    "api-server": "639"
-  }
-}

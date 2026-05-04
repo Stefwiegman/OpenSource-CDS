@@ -64,12 +64,7 @@ class RecordingPanel(QGroupBox):
 
         self.record_btn = QPushButton("● Record")
         self.record_btn.setCheckable(True)
-        self.record_btn.setStyleSheet(
-            "QPushButton:checked {"
-            " background-color: #c0392b; color: white;"
-            " font-weight: bold;"
-            "}"
-        )
+        self.record_btn.setObjectName("DangerButton")
         self.record_btn.toggled.connect(self._toggle_record)
         layout.addWidget(self.record_btn, 1, 0, 1, 2)
 

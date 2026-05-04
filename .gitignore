@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Virtuele omgevingen
+.venv/
+venv/
+env/
+
+# Gegenereerde meetdata + presets (gebruikersstate, hoort niet in repo)
+data/
+calibration.yaml
+scan_presets.yaml
+
+# Gridsearch-output (regenereerbaar)
+gridsearch_results.csv

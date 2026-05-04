@@ -270,10 +270,7 @@ class ScanPanel(QGroupBox):
         # Start/Cancel
         btn_row = QHBoxLayout()
         self.start_btn = QPushButton("▶ Start scan")
-        self.start_btn.setStyleSheet(
-            "QPushButton { background-color: #1e8449; color: white;"
-            " font-weight: bold; padding: 8px; }"
-        )
+        self.start_btn.setObjectName("PrimaryButton")
         self.start_btn.clicked.connect(self._start_scan)
         btn_row.addWidget(self.start_btn)
 

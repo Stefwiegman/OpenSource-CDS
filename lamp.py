@@ -71,7 +71,7 @@ class LampPanel(QGroupBox):
         layout.addWidget(self.off_btn, 1, 2, 1, 2)
 
         self.status = QLabel("Niet verbonden (verbind eerst de motoren).")
-        self.status.setStyleSheet("color: gray;")
+        self.status.setProperty("role", "status")
         layout.addWidget(self.status, 2, 0, 1, 4)
 
         layout.setColumnStretch(1, 1)
