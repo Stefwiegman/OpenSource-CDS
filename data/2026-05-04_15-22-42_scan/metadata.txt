@@ -1,0 +1,9 @@
+# Bep-Project measurement
+start: 2026-05-04T15:22:42
+run_name: 
+moku_address: 192.168.73.1
+moku_channel: 1
+moku_range: 10Vpp
+moku_coupling: DC
+end: 2026-05-04T15:22:47
+row_count: 0

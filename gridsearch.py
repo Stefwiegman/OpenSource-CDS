@@ -68,7 +68,7 @@ def _dz1_through_zero(Im_level, q, f1, f2, L, r0, r_d, I0):
 
 def compute_row(f1, f2, r0=c.r0, r_d=c.r_d, I0=c.I0):
     """Confocal derived values for one (f1, f2) combination, with L = f1+f2."""
-    L = f1 + f2
+    L = 65 #f1 + f2
     q = c.compute_q(f1=f1, f2=f2, L=L, r0=r0, r_d=r_d, I0=I0)
     Sm0 = c.compute_Sm(0.0, q, f1=f1, f2=f2, L=L, r0=r0, r_d=r_d, I0=I0)
 

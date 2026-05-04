@@ -7,6 +7,10 @@
 //   "SPEED 800\n"  -> max snelheid voor alle motoren (stappen/s)
 //   "STOP\n"       -> noodstop, alle motoren onmiddellijk stil
 //   "LAMP 128\n"   -> WS2812B-helderheid 0..255 (alle 8 pixels wit)
+//   "SETPOS 1 0\n" -> zet motor 1 op positie 0 zonder te bewegen (soft-home)
+//   "WHERE\n"      -> antwoord: "POS <m1> <m2> <m3>"  (huidige posities)
+//   "BUSY?\n"      -> antwoord: "BUSY 1" (rijdt) of "BUSY 0" (stilstand)
+//   "GOTO 100 -50 0\n" -> alle 3 motoren tegelijk naar absolute target
 //
 // Hardware-aannames (PAS AAN INDIEN ANDERS):
 //   - Drie A4988/DRV8825 drivers op CNC-shield V3 layout:
@@ -84,6 +88,55 @@ void handleCommand(const String& line) {
     b = constrain(b, 0, 255);
     setLamp((uint8_t)b);
     Serial.print("OK LAMP "); Serial.println(b);
+    return;
+  }
+  if (line == "WHERE") {
+    Serial.print("POS ");
+    Serial.print(m1.currentPosition()); Serial.print(' ');
+    Serial.print(m2.currentPosition()); Serial.print(' ');
+    Serial.println(m3.currentPosition());
+    return;
+  }
+  if (line == "BUSY?") {
+    bool busy = (m1.distanceToGo() != 0)
+             || (m2.distanceToGo() != 0)
+             || (m3.distanceToGo() != 0);
+    Serial.print("BUSY "); Serial.println(busy ? 1 : 0);
+    return;
+  }
+  if (line.startsWith("GOTO ")) {
+    // GOTO <m1> <m2> <m3>
+    int sp1 = line.indexOf(' ', 5);
+    if (sp1 <= 0) return;
+    int sp2 = line.indexOf(' ', sp1 + 1);
+    if (sp2 <= 0) return;
+    long t1 = line.substring(5, sp1).toInt();
+    long t2 = line.substring(sp1 + 1, sp2).toInt();
+    long t3 = line.substring(sp2 + 1).toInt();
+    m1.moveTo(t1);
+    m2.moveTo(t2);
+    m3.moveTo(t3);
+    Serial.print("OK GOTO "); Serial.print(t1);
+    Serial.print(' '); Serial.print(t2);
+    Serial.print(' '); Serial.println(t3);
+    return;
+  }
+  if (line.startsWith("SETPOS ")) {
+    // SETPOS <motor> <position>
+    int sp = line.indexOf(' ', 7);
+    if (sp <= 0) return;
+    int motor = line.substring(7, sp).toInt();
+    long pos = line.substring(sp + 1).toInt();
+    AccelStepper* m = nullptr;
+    switch (motor) {
+      case 1: m = &m1; break;
+      case 2: m = &m2; break;
+      case 3: m = &m3; break;
+      default: return;
+    }
+    m->setCurrentPosition(pos);  // verplaatst niet, hertelt alleen
+    Serial.print("OK SETPOS "); Serial.print(motor);
+    Serial.print(' '); Serial.println(pos);
     return;
   }
   // Anders: "<motor> <target>"
