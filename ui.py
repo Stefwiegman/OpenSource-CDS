@@ -18,12 +18,13 @@ import numpy as np
 import serial
 import serial.tools.list_ports
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QDoubleSpinBox,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -98,9 +100,10 @@ class CameraPanel(QLabel):
         self.setText("Camera laden...")
 
     def update_frame(self, frame: np.ndarray) -> None:
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        rgb = np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         h, w, ch = rgb.shape
-        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888).copy()
+        bytes_per_line = ch * w
+        qimg = QImage(rgb.tobytes(), w, h, bytes_per_line, QImage.Format_RGB888)
         pix = QPixmap.fromImage(qimg).scaled(
             self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
         )
@@ -623,6 +626,8 @@ class MokuPanel(QGroupBox):
 
         fig = Figure(figsize=(8, 3))
         self.canvas = FigureCanvas(fig)
+        self.canvas.setMinimumHeight(180)
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.ax = fig.add_subplot(111)
         self.ax.set_xlabel("tijd (s)")
         self.ax.set_ylabel("spanning (V)")
@@ -630,7 +635,7 @@ class MokuPanel(QGroupBox):
         self.ax.set_xlim(-self._timebase, self._timebase)
         self.line, = self.ax.plot([], [], lw=1.2)
         fig.tight_layout()
-        layout.addWidget(self.canvas)
+        layout.addWidget(self.canvas, stretch=1)
 
         self.status = QLabel("Niet verbonden.")
         self.status.setStyleSheet("color: gray;")
@@ -696,12 +701,203 @@ class MokuPanel(QGroupBox):
 
 # -------------------- Main window --------------------
 
+# -------------------- Status pill (top-bar component) --------------------
+
+class StatusPill(QWidget):
+    """Compacte 'connected/disconnected'-indicator met dot + label + meta-text."""
+
+    def __init__(self, label: str) -> None:
+        super().__init__()
+        self.setProperty("role", "pill")
+        self.setProperty("connected", False)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 0, 12, 0)
+        layout.setSpacing(8)
+
+        self.dot = QLabel()
+        self.dot.setProperty("role", "pill-dot")
+        self.dot.setProperty("connected", False)
+
+        self.label = QLabel(label)
+        self.label.setProperty("role", "pill-label")
+
+        self.meta = QLabel("—")
+        self.meta.setProperty("role", "pill-meta")
+
+        layout.addWidget(self.dot)
+        layout.addWidget(self.label)
+        layout.addWidget(self.meta)
+
+    def set_state(self, connected: bool, meta: str) -> None:
+        connected_changed = self.property("connected") != connected
+        self.setProperty("connected", connected)
+        self.dot.setProperty("connected", connected)
+        self.meta.setText(meta if meta else ("—" if not connected else ""))
+        if connected_changed:
+            # Force QSS re-evaluation
+            for w in (self, self.dot):
+                w.style().unpolish(w)
+                w.style().polish(w)
+
+
+# -------------------- Top bar --------------------
+
+class TopBar(QWidget):
+    """Bovenste statusbalk: brand · pills · acties."""
+
+    def __init__(self, motor_panel: "MotorPanel", moku_panel: "MokuPanel",
+                 cam_thread: "CameraThread") -> None:
+        super().__init__()
+        self.motor_panel = motor_panel
+        self.moku_panel = moku_panel
+        self.cam_thread = cam_thread
+        self._camera_seen = False
+        self.setObjectName("TopBar")
+        self.setFixedHeight(50)
+
+        h = QHBoxLayout(self)
+        h.setContentsMargins(20, 0, 20, 0)
+        h.setSpacing(20)
+
+        # Brand
+        brand_box = QHBoxLayout()
+        brand_box.setSpacing(6)
+        mark = QLabel("◈"); mark.setObjectName("BrandMark")
+        name = QLabel("Bep-Project"); name.setObjectName("BrandName")
+        sep = QLabel("·"); sep.setObjectName("BrandSep")
+        sub = QLabel("Confocal"); sub.setObjectName("BrandSub")
+        for w in (mark, name, sep, sub):
+            brand_box.addWidget(w)
+        brand_wrap = QWidget()
+        brand_wrap.setLayout(brand_box)
+        h.addWidget(brand_wrap)
+
+        # Vertical divider
+        div = QFrame()
+        div.setFrameShape(QFrame.VLine)
+        div.setFixedHeight(22)
+        div.setStyleSheet("color: #252c36;")
+        h.addWidget(div)
+
+        # Pills
+        self.motor_pill = StatusPill("Motors")
+        self.moku_pill = StatusPill("Moku")
+        self.camera_pill = StatusPill("Camera")
+        for p in (self.motor_pill, self.moku_pill, self.camera_pill):
+            h.addWidget(p)
+
+        h.addStretch(1)
+
+        # Actions: Save kalibratie, Help
+        self.save_btn = QPushButton("⚙  Save kalibratie")
+        self.save_btn.setObjectName("TopBarAction")
+        self.save_btn.clicked.connect(self.motor_panel._save_calibration)
+        h.addWidget(self.save_btn)
+
+        self.help_btn = QPushButton("?")
+        self.help_btn.setObjectName("IconButton")
+        self.help_btn.setToolTip("Open RUN_GUIDE.md")
+        self.help_btn.clicked.connect(self._show_help)
+        h.addWidget(self.help_btn)
+
+        # Camera detect: pas connected zodra eerste frame binnen is
+        self.cam_thread.frame_ready.connect(self._on_first_camera_frame)
+
+        # Polling-timer voor motor/moku (geen wijzigingen aan bestaande klassen)
+        self._poll = QTimer(self)
+        self._poll.setInterval(500)
+        self._poll.timeout.connect(self._refresh_pills)
+        self._poll.start()
+        self._refresh_pills()
+
+    def _on_first_camera_frame(self, _frame) -> None:
+        if not self._camera_seen:
+            self._camera_seen = True
+            self.camera_pill.set_state(True, f"USB{CAMERA_INDEX}")
+
+    def _refresh_pills(self) -> None:
+        # Motors
+        ser = self.motor_panel.serial
+        if ser is not None and ser.is_open:
+            self.motor_pill.set_state(True, self.motor_panel.port_combo.currentText())
+        else:
+            self.motor_pill.set_state(False, self.motor_panel.port_combo.currentText())
+        # Moku
+        if self.moku_panel.thread is not None and self.moku_panel.thread.isRunning():
+            self.moku_pill.set_state(True, self.moku_panel.address_input.text())
+        else:
+            self.moku_pill.set_state(False, self.moku_panel.address_input.text())
+        # Camera (sticky once seen)
+        if not self._camera_seen:
+            self.camera_pill.set_state(False, f"USB{CAMERA_INDEX}")
+
+    def _show_help(self) -> None:
+        QMessageBox.information(
+            self, "Help",
+            "Lees docs/RUN_GUIDE.md voor de volledige werkwijze.\n\n"
+            "Tabs:\n"
+            "  • Manual   — handmatige opname per Moku-frame\n"
+            "  • Auto Scan — automatische raster-scan\n"
+            "  • Setup    — motoren verbinden, jog, kalibratie\n\n"
+            "Lamp-slider werkt onafhankelijk van de actieve tab.",
+        )
+
+
+# -------------------- Camera card (wrapt CameraPanel met titel-rij) --------------------
+
+class CameraCard(QFrame):
+    """Cosmetische wrapper rond CameraPanel — toont 'Camera' titel + LIVE-badge."""
+
+    def __init__(self, camera_panel: CameraPanel) -> None:
+        super().__init__()
+        self.setObjectName("CameraCard")
+        self.setStyleSheet(
+            "QFrame#CameraCard {"
+            " background-color: #161b22;"
+            " border: 1px solid #252c36;"
+            " border-radius: 8px;"
+            "}"
+        )
+
+        v = QVBoxLayout(self)
+        v.setContentsMargins(12, 10, 12, 12)
+        v.setSpacing(8)
+
+        header = QHBoxLayout()
+        title = QLabel("Camera feed")
+        title.setProperty("role", "title")
+        sub = QLabel(f"USB{CAMERA_INDEX}")
+        sub.setProperty("role", "subtitle")
+        header.addWidget(title)
+        header.addSpacing(8)
+        header.addWidget(sub)
+        header.addStretch(1)
+
+        live = QLabel("● LIVE")
+        live.setStyleSheet(
+            "color: #ef4444; font-weight: 600;"
+            " font-family: 'JetBrains Mono', Consolas, monospace;"
+            " font-size: 11px; letter-spacing: 1px;"
+            " background-color: rgba(239,68,68,0.1);"
+            " border: 1px solid rgba(239,68,68,0.3);"
+            " border-radius: 4px; padding: 2px 8px;"
+        )
+        header.addWidget(live)
+
+        v.addLayout(header)
+        v.addWidget(camera_panel, stretch=1)
+
+
+# -------------------- Main window --------------------
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Bep-Project UI")
-        self.resize(1200, 800)
+        self.setWindowTitle("Bep-Project · Confocal")
+        self.resize(1400, 900)
 
+        # ---- panels (functioneel ongewijzigd) ----
         self.camera_panel = CameraPanel()
         self.motor_panel = MotorPanel()
         self.lamp_panel = LampPanel(get_serial=lambda: self.motor_panel.serial)
@@ -717,48 +913,78 @@ class MainWindow(QMainWindow):
             moku_panel=self.moku_panel,
         )
 
-        for w in (
-            self.camera_panel,
-            self.motor_panel,
-            self.lamp_panel,
-            self.moku_panel,
-            self.recording_panel,
-            self.scan_panel,
-        ):
-            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-        right_column = QSplitter(Qt.Vertical)
-        right_column.addWidget(self.motor_panel)
-        right_column.addWidget(self.lamp_panel)
-        right_column.addWidget(self.recording_panel)
-        right_column.addWidget(self.scan_panel)
-        right_column.setStretchFactor(0, 3)
-        right_column.setStretchFactor(1, 1)
-        right_column.setStretchFactor(2, 1)
-        right_column.setStretchFactor(3, 3)
-        right_column.setChildrenCollapsible(False)
-
-        top_splitter = QSplitter(Qt.Horizontal)
-        top_splitter.addWidget(self.camera_panel)
-        top_splitter.addWidget(right_column)
-        top_splitter.setStretchFactor(0, 2)
-        top_splitter.setStretchFactor(1, 1)
-        top_splitter.setSizes([800, 400])
-
-        main_splitter = QSplitter(Qt.Vertical)
-        main_splitter.addWidget(top_splitter)
-        main_splitter.addWidget(self.moku_panel)
-        main_splitter.setStretchFactor(0, 2)
-        main_splitter.setStretchFactor(1, 1)
-        main_splitter.setSizes([520, 260])
-        main_splitter.setChildrenCollapsible(False)
-        top_splitter.setChildrenCollapsible(False)
-
-        self.setCentralWidget(main_splitter)
-
+        # ---- camera-thread ----
         self.cam_thread = CameraThread()
         self.cam_thread.frame_ready.connect(self.camera_panel.update_frame)
         self.cam_thread.start()
+
+        # ---- top bar ----
+        self.top_bar = TopBar(
+            motor_panel=self.motor_panel,
+            moku_panel=self.moku_panel,
+            cam_thread=self.cam_thread,
+        )
+
+        # ---- camera card (links) ----
+        self.camera_card = CameraCard(self.camera_panel)
+
+        # ---- sidebar (rechts) = tabs + altijd-zichtbare lamp ----
+        # Onderdruk redundante QGroupBox-titel — de tab-naam volstaat al
+        for panel in (self.recording_panel, self.scan_panel, self.motor_panel):
+            panel.setTitle("")
+            panel.setProperty("inTab", True)
+            panel.style().unpolish(panel)
+            panel.style().polish(panel)
+
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(self.recording_panel, "Manual")
+        self.tabs.addTab(self.scan_panel, "Auto Scan")
+        self.tabs.addTab(self.motor_panel, "Setup")
+        self.tabs.setCurrentIndex(2)  # start in Setup om eerst te kunnen verbinden
+
+        sidebar = QWidget()
+        sidebar_v = QVBoxLayout(sidebar)
+        sidebar_v.setContentsMargins(0, 0, 0, 0)
+        sidebar_v.setSpacing(12)
+        sidebar_v.addWidget(self.tabs, stretch=1)
+        sidebar_v.addWidget(self.lamp_panel, stretch=0)
+
+        # ---- horizontal splitter (camera | sidebar) ----
+        h_splitter = QSplitter(Qt.Horizontal)
+        h_splitter.addWidget(self.camera_card)
+        h_splitter.addWidget(sidebar)
+        h_splitter.setStretchFactor(0, 3)
+        h_splitter.setStretchFactor(1, 2)
+        h_splitter.setSizes([840, 560])
+        h_splitter.setChildrenCollapsible(False)
+
+        # ---- vertical splitter (top | moku) ----
+        self.moku_panel.setMinimumHeight(280)
+        v_splitter = QSplitter(Qt.Vertical)
+        v_splitter.addWidget(h_splitter)
+        v_splitter.addWidget(self.moku_panel)
+        v_splitter.setStretchFactor(0, 2)
+        v_splitter.setStretchFactor(1, 1)
+        v_splitter.setSizes([520, 320])
+        v_splitter.setChildrenCollapsible(False)
+
+        # ---- root widget ----
+        root = QWidget()
+        root.setObjectName("root")
+        root_v = QVBoxLayout(root)
+        root_v.setContentsMargins(0, 0, 0, 0)
+        root_v.setSpacing(0)
+        root_v.addWidget(self.top_bar)
+
+        body = QWidget()
+        body_v = QVBoxLayout(body)
+        body_v.setContentsMargins(12, 12, 12, 12)
+        body_v.setSpacing(0)
+        body_v.addWidget(v_splitter)
+        root_v.addWidget(body, stretch=1)
+
+        self.setCentralWidget(root)
 
     def closeEvent(self, event) -> None:
         self.scan_panel.cancel_if_running()
@@ -769,8 +995,23 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 
+# -------------------- App entry --------------------
+
+def _load_stylesheet(app: QApplication) -> None:
+    """Laad styles.qss als hij naast ui.py bestaat. Stilte als ontbrekend."""
+    try:
+        from pathlib import Path
+        qss_path = Path(__file__).parent / "styles.qss"
+        if qss_path.exists():
+            app.setStyleSheet(qss_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"Kon styles.qss niet laden: {e}")
+
+
 def main() -> None:
     app = QApplication(sys.argv)
+    app.setApplicationName("Bep-Project")
+    _load_stylesheet(app)
     win = MainWindow()
     win.show()
     sys.exit(app.exec())
