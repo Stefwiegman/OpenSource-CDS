@@ -40,9 +40,11 @@ from PySide6.QtWidgets import (
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+from lamp import LampPanel
+
 
 CAMERA_INDEX = 0
-DEFAULT_PORT = "COM3"
+DEFAULT_PORT = "COM4"
 BAUD = 9600
 MAX_STEPS = 4096
 DEFAULT_SPEED = 500   # AccelStepper setMaxSpeed (steps/s)
@@ -461,14 +463,22 @@ class MainWindow(QMainWindow):
 
         self.camera_panel = CameraPanel()
         self.motor_panel = MotorPanel()
+        self.lamp_panel = LampPanel(get_serial=lambda: self.motor_panel.serial)
         self.moku_panel = MokuPanel()
 
-        for w in (self.camera_panel, self.motor_panel, self.moku_panel):
+        for w in (self.camera_panel, self.motor_panel, self.lamp_panel, self.moku_panel):
             w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        right_column = QSplitter(Qt.Vertical)
+        right_column.addWidget(self.motor_panel)
+        right_column.addWidget(self.lamp_panel)
+        right_column.setStretchFactor(0, 3)
+        right_column.setStretchFactor(1, 1)
+        right_column.setChildrenCollapsible(False)
 
         top_splitter = QSplitter(Qt.Horizontal)
         top_splitter.addWidget(self.camera_panel)
-        top_splitter.addWidget(self.motor_panel)
+        top_splitter.addWidget(right_column)
         top_splitter.setStretchFactor(0, 2)
         top_splitter.setStretchFactor(1, 1)
         top_splitter.setSizes([800, 400])
