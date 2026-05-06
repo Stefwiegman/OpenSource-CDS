@@ -17,12 +17,14 @@ from pathlib import Path
 
 import numpy as np
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QGroupBox,
     QGridLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
 )
 
@@ -77,8 +79,18 @@ class RecordingPanel(QGroupBox):
         self.status.setStyleSheet("color: gray;")
         layout.addWidget(self.status, 2, 0, 1, 3)
 
+        # ---- Recente runs ----
+        runs_lbl = QLabel("Recente runs")
+        runs_lbl.setProperty("role", "caption")
+        layout.addWidget(runs_lbl, 3, 0, 1, 3)
+
+        self.runs_list = QListWidget()
+        self.runs_list.setToolTip("Dubbel-klik om de map te openen")
+        self.runs_list.itemDoubleClicked.connect(self._open_run_folder)
+        layout.addWidget(self.runs_list, 4, 0, 1, 3)
+
         layout.setColumnStretch(1, 1)
-        layout.setRowStretch(3, 1)
+        layout.setRowStretch(4, 1)
 
         self._tick = QTimer(self)
         self._tick.setInterval(STATUS_REFRESH_MS)
@@ -86,6 +98,9 @@ class RecordingPanel(QGroupBox):
 
         # Luister naar elk Moku-frame
         self.moku_panel.frame.connect(self._on_frame)
+
+        # Eerste populatie van de runs-lijst
+        self._refresh_runs()
 
     # ---- record-toggle --------------------------------------------
 
@@ -138,6 +153,7 @@ class RecordingPanel(QGroupBox):
         self.record_btn.setText("● Record")
         self.status.setText(f"Opname gestopt — {self._n_rows} rijen.")
         self.status.setStyleSheet("color: gray;")
+        self._refresh_runs()
 
     # ---- per-frame schrijven --------------------------------------
 
@@ -189,12 +205,58 @@ class RecordingPanel(QGroupBox):
     def _open_folder(self) -> None:
         if self._run_dir is None or not self._run_dir.exists():
             return
+        self._open_path(self._run_dir)
+
+    # ---- recente runs ---------------------------------------------
+
+    def _refresh_runs(self) -> None:
+        """Vul de lijst met de 30 meest-recente run-folders uit data/."""
+        self.runs_list.clear()
+        if not DATA_ROOT.exists():
+            return
+        runs = []
+        for path in DATA_ROOT.iterdir():
+            if not path.is_dir():
+                continue
+            runs.append((path.stat().st_mtime, path))
+        runs.sort(key=lambda x: x[0], reverse=True)
+        for _, path in runs[:30]:
+            item = QListWidgetItem(self._format_run_label(path))
+            item.setData(Qt.UserRole, str(path))
+            self.runs_list.addItem(item)
+
+    @staticmethod
+    def _format_run_label(path: Path) -> str:
+        """Parse 'YYYY-MM-DD_HH-MM-SS_naam' of 'scan_<...>' tot 'naam — datum tijd'."""
+        name = path.name
+        body = name[5:] if name.startswith("scan_") else name
+        parts = body.split("_", 2)
+        if len(parts) >= 3:
+            date_part, time_part, run_name = parts
+            time_readable = time_part.replace("-", ":")
+            prefix = "scan: " if name.startswith("scan_") else ""
+            return f"{prefix}{run_name}   —   {date_part}  {time_readable}"
+        return name
+
+    def _open_run_folder(self, item: QListWidgetItem) -> None:
+        path = Path(item.data(Qt.UserRole))
+        if path.exists():
+            self._open_path(path)
+
+    @staticmethod
+    def _open_path(path: Path) -> None:
         if sys.platform == "win32":
-            os.startfile(str(self._run_dir))
+            os.startfile(str(path))
         elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(self._run_dir)])
+            subprocess.Popen(["open", str(path)])
         else:
-            subprocess.Popen(["xdg-open", str(self._run_dir)])
+            subprocess.Popen(["xdg-open", str(path)])
+
+    # ---- tab-zichtbaarheid hook -----------------------------------
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._refresh_runs()
 
     def _build_metadata(self, start: bool) -> str:
         if start:

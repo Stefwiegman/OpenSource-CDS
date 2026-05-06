@@ -24,7 +24,6 @@ import yaml
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QGridLayout,
@@ -47,7 +46,7 @@ SETTLE_DEFAULT = 200
 FRAMES_DEFAULT = 5
 
 CSV_HEADER = [
-    "t_iso", "scan_point", "ix", "iy", "iz",
+    "t_iso", "scan_point", "ix", "iy",
     "motor1", "motor2", "motor3",
     "motor1_mm", "motor2_mm", "motor3_mm",
     "lamp",
@@ -72,14 +71,9 @@ class ScanConfig:
     settle_ms: int = SETTLE_DEFAULT
     frames_per_point: int = FRAMES_DEFAULT
     snake: bool = True
-    z_enable: bool = False
-    z_min_mm: float = 0.0
-    z_max_mm: float = 0.0
-    z_steps: int = 1
 
     def total_points(self) -> int:
-        z = max(self.z_steps, 1) if self.z_enable else 1
-        return self.points_x * self.points_y * z
+        return self.points_x * self.points_y
 
 
 def load_presets() -> List[dict]:
@@ -103,14 +97,14 @@ def save_presets(presets: List[dict]) -> None:
 def _default_presets() -> List[dict]:
     return [
         {"name": "Klein 1×1 mm", "size_x_mm": 1.0, "size_y_mm": 1.0,
-         "points_x": 20, "points_y": 20, "settle_ms": 100, "frames_per_point": 3,
-         "snake": True, "z_enable": False, "z_min_mm": 0.0, "z_max_mm": 0.0, "z_steps": 1},
+         "points_x": 20, "points_y": 20, "settle_ms": 100,
+         "frames_per_point": 3, "snake": True},
         {"name": "Middel 5×5 mm", "size_x_mm": 5.0, "size_y_mm": 5.0,
-         "points_x": 50, "points_y": 50, "settle_ms": 200, "frames_per_point": 5,
-         "snake": True, "z_enable": False, "z_min_mm": 0.0, "z_max_mm": 0.0, "z_steps": 1},
+         "points_x": 50, "points_y": 50, "settle_ms": 200,
+         "frames_per_point": 5, "snake": True},
         {"name": "Groot 10×10 mm", "size_x_mm": 10.0, "size_y_mm": 10.0,
-         "points_x": 100, "points_y": 100, "settle_ms": 200, "frames_per_point": 5,
-         "snake": True, "z_enable": False, "z_min_mm": 0.0, "z_max_mm": 0.0, "z_steps": 1},
+         "points_x": 100, "points_y": 100, "settle_ms": 200,
+         "frames_per_point": 5, "snake": True},
     ]
 
 
@@ -124,17 +118,15 @@ class ScanState(Enum):
     DONE = "done"
 
 
-def build_path(cfg: ScanConfig) -> List[tuple[int, int, int]]:
-    """Genereer (ix, iy, iz)-volgorde over het hele raster — snake-pad."""
-    z_count = max(cfg.z_steps, 1) if cfg.z_enable else 1
-    path: List[tuple[int, int, int]] = []
-    for iz in range(z_count):
-        for iy in range(cfg.points_y):
-            xs = range(cfg.points_x)
-            if cfg.snake and (iy % 2 == 1):
-                xs = reversed(xs)
-            for ix in xs:
-                path.append((ix, iy, iz))
+def build_path(cfg: ScanConfig) -> List[tuple[int, int]]:
+    """Genereer (ix, iy)-volgorde over het hele raster — snake-pad."""
+    path: List[tuple[int, int]] = []
+    for iy in range(cfg.points_y):
+        xs = range(cfg.points_x)
+        if cfg.snake and (iy % 2 == 1):
+            xs = reversed(xs)
+        for ix in xs:
+            path.append((ix, iy))
     return path
 
 
@@ -153,12 +145,11 @@ class ScanPanel(QGroupBox):
         self.moku_panel = moku_panel
 
         self._state = ScanState.IDLE
-        self._path: List[tuple[int, int, int]] = []
+        self._path: List[tuple[int, int]] = []
         self._idx = 0
-        self._origin: tuple[int, int, int] = (0, 0, 0)
+        self._origin: tuple[int, int] = (0, 0)
         self._step_x = 0
         self._step_y = 0
-        self._step_z = 0
         self._frame_buffer: list[np.ndarray] = []
         self._frames_needed = 0
         self._csv_file = None
@@ -224,27 +215,6 @@ class ScanPanel(QGroupBox):
         layout.addWidget(self.frames, r, 3)
         r += 1
 
-        # Z-stack
-        self.z_enable_cb = QCheckBox("Z-stack (M3 sweept door focus)")
-        self.z_enable_cb.toggled.connect(self._on_z_toggled)
-        layout.addWidget(self.z_enable_cb, r, 0, 1, 4)
-        r += 1
-
-        layout.addWidget(QLabel("Z-min (mm):"), r, 0)
-        self.z_min = QDoubleSpinBox(); self.z_min.setRange(-100.0, 100.0)
-        self.z_min.setDecimals(3); self.z_min.setValue(0.0)
-        layout.addWidget(self.z_min, r, 1)
-        layout.addWidget(QLabel("Z-max (mm):"), r, 2)
-        self.z_max = QDoubleSpinBox(); self.z_max.setRange(-100.0, 100.0)
-        self.z_max.setDecimals(3); self.z_max.setValue(0.0)
-        layout.addWidget(self.z_max, r, 3)
-        r += 1
-
-        layout.addWidget(QLabel("Z-stappen:"), r, 0)
-        self.z_steps = QSpinBox(); self.z_steps.setRange(1, 200); self.z_steps.setValue(1)
-        layout.addWidget(self.z_steps, r, 1)
-        r += 1
-
         # Spacer-rij — vult de resterende ruimte tussen form en actie-area
         layout.setRowStretch(r, 1)
         r += 1
@@ -257,10 +227,8 @@ class ScanPanel(QGroupBox):
         r += 1
 
         # Live-update van schatting
-        for w in (self.size_x, self.size_y, self.resolution,
-                  self.frames, self.z_steps):
+        for w in (self.size_x, self.size_y, self.resolution, self.frames):
             w.valueChanged.connect(self._update_estimate)
-        self.z_enable_cb.toggled.connect(self._update_estimate)
 
         # Start / Cancel — exact gelijke breedte via QGridLayout-kolommen,
         # exact gelijke hoogte via setFixedHeight
@@ -303,12 +271,10 @@ class ScanPanel(QGroupBox):
 
         # Iets ruimere inputs voor luchtigere uitstraling
         for w in (self.name_input, self.preset_combo, self.save_preset_btn,
-                  self.size_x, self.size_y, self.resolution, self.frames,
-                  self.z_min, self.z_max, self.z_steps):
+                  self.size_x, self.size_y, self.resolution, self.frames):
             w.setMinimumHeight(34)
 
         # Initial state
-        self._on_z_toggled(False)
         self._update_estimate()
 
     # ---------- Preset-handling ----------
@@ -328,13 +294,9 @@ class ScanPanel(QGroupBox):
         p = presets[idx - 1]
         self.size_x.setValue(p.get("size_x_mm", 5.0))
         self.size_y.setValue(p.get("size_y_mm", 5.0))
-        # Resolutie = points_x (presets met aparte points_y nemen we als points_x over)
+        # Resolutie = points_x (oude presets met aparte points_y nemen we als points_x over)
         self.resolution.setValue(int(p.get("points_x", 50)))
         self.frames.setValue(int(p.get("frames_per_point", FRAMES_DEFAULT)))
-        self.z_enable_cb.setChecked(bool(p.get("z_enable", False)))
-        self.z_min.setValue(p.get("z_min_mm", 0.0))
-        self.z_max.setValue(p.get("z_max_mm", 0.0))
-        self.z_steps.setValue(int(p.get("z_steps", 1)))
 
     def _save_current_preset(self) -> None:
         name, ok = QInputDialog.getText(self, "Preset opslaan",
@@ -363,15 +325,7 @@ class ScanPanel(QGroupBox):
             settle_ms=SETTLE_DEFAULT,
             frames_per_point=self.frames.value(),
             snake=True,
-            z_enable=self.z_enable_cb.isChecked(),
-            z_min_mm=self.z_min.value(),
-            z_max_mm=self.z_max.value(),
-            z_steps=self.z_steps.value(),
         )
-
-    def _on_z_toggled(self, on: bool) -> None:
-        for w in (self.z_min, self.z_max, self.z_steps):
-            w.setEnabled(on)
 
     def _update_estimate(self) -> None:
         cfg = self._read_config()
@@ -391,14 +345,12 @@ class ScanPanel(QGroupBox):
             return "Scan is al actief."
         if not (self.motor_panel.serial and self.motor_panel.serial.is_open):
             return "Motoren niet verbonden — verbind eerst MotorPanel."
-        for i in range(2 if not cfg.z_enable else 3):
+        for i in range(2):
             if self.motor_panel.mm_per_step(i) <= 0:
                 return (f"Motor {i+1} heeft mm/stap = 0 — eik eerst "
                         "in MotorPanel of vul mm/stap-veld in.")
         if self.moku_panel.thread is None or not self.moku_panel.thread.isRunning():
             return "Moku niet verbonden — verbind eerst MokuPanel."
-        if cfg.z_enable and cfg.z_steps < 2:
-            return "Z-stack aan, maar Z-stappen < 2."
         return None
 
     # ---------- Start / cancel ----------
@@ -413,27 +365,17 @@ class ScanPanel(QGroupBox):
         # Bereken stappen-per-rasterpunt en oorsprong (huidige motor-positie = midden)
         mmps_x = self.motor_panel.mm_per_step(0)
         mmps_y = self.motor_panel.mm_per_step(1)
-        mmps_z = self.motor_panel.mm_per_step(2) if cfg.z_enable else 0.0
 
         steps_x_total = round(cfg.size_x_mm / mmps_x)
         steps_y_total = round(cfg.size_y_mm / mmps_y)
         self._step_x = steps_x_total // (cfg.points_x - 1)
         self._step_y = steps_y_total // (cfg.points_y - 1)
-        if cfg.z_enable and cfg.z_steps > 1 and mmps_z > 0:
-            steps_z_total = round((cfg.z_max_mm - cfg.z_min_mm) / mmps_z)
-            self._step_z = steps_z_total // (cfg.z_steps - 1)
-        else:
-            self._step_z = 0
 
         cur = self.motor_panel.targets
         # Origin = linksonder van het raster = huidige positie - halve grootte
         ox = cur[0] - steps_x_total // 2
         oy = cur[1] - steps_y_total // 2
-        if cfg.z_enable and mmps_z > 0:
-            oz = cur[2] + round(cfg.z_min_mm / mmps_z)
-        else:
-            oz = cur[2]
-        self._origin = (ox, oy, oz)
+        self._origin = (ox, oy)
 
         # CSV openen
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -461,14 +403,9 @@ class ScanPanel(QGroupBox):
             f"settle_ms: {cfg.settle_ms}\n"
             f"frames_per_point: {cfg.frames_per_point}\n"
             f"snake: {cfg.snake}\n"
-            f"z_enable: {cfg.z_enable}\n"
-            f"z_min_mm: {cfg.z_min_mm}\n"
-            f"z_max_mm: {cfg.z_max_mm}\n"
-            f"z_steps: {cfg.z_steps}\n"
             f"origin_steps: {self._origin}\n"
             f"motor1_mm_per_step: {mmps_x:.6f}\n"
             f"motor2_mm_per_step: {mmps_y:.6f}\n"
-            f"motor3_mm_per_step: {mmps_z:.6f}\n"
             f"moku_address: {mp.address_input.text()}\n"
             f"moku_channel: {mp.channel_combo.currentText()}\n"
             f"moku_range: {mp.range_combo.currentText()}\n"
@@ -516,17 +453,17 @@ class ScanPanel(QGroupBox):
         if self._idx >= len(self._path):
             self._finish(canceled=False)
             return
-        ix, iy, iz = self._path[self._idx]
-        ox, oy, oz = self._origin
+        ix, iy = self._path[self._idx]
+        ox, oy = self._origin
         target_x = ox + ix * self._step_x
         target_y = oy + iy * self._step_y
-        target_z = oz + iz * self._step_z
+        # Motor 3 (focus) blijft staan op huidige positie
+        target_z = self.motor_panel.targets[2]
 
         # Update verwachte targets in motor_panel (zodat recording etc. consistent zijn)
         self.motor_panel.targets[0] = target_x
         self.motor_panel.targets[1] = target_y
-        self.motor_panel.targets[2] = target_z
-        for i in range(3):
+        for i in range(2):
             self.motor_panel._refresh_target_label(i)
 
         cmd = f"GOTO {target_x} {target_y} {target_z}\n"
@@ -540,7 +477,7 @@ class ScanPanel(QGroupBox):
 
         self._state = ScanState.MOVING
         self._poll_timer.start()
-        self._update_progress_label(ix, iy, iz)
+        self._update_progress_label(ix, iy)
 
     def _poll_busy(self) -> None:
         if self._state != ScanState.MOVING:
@@ -597,7 +534,7 @@ class ScanPanel(QGroupBox):
     def _write_point_row(self) -> None:
         if self._csv_writer is None:
             return
-        ix, iy, iz = self._path[self._idx]
+        ix, iy = self._path[self._idx]
         # Aggregeer alle frames tot 1 sample-set
         all_samples = np.concatenate(self._frame_buffer)
         v_min = float(np.min(all_samples))
@@ -607,7 +544,7 @@ class ScanPanel(QGroupBox):
         row = [
             datetime.now().isoformat(timespec="milliseconds"),
             self._idx,
-            ix, iy, iz,
+            ix, iy,
             steps[0], steps[1], steps[2],
             _fmt(mms[0]), _fmt(mms[1]), _fmt(mms[2]),
             self.lamp_panel.slider.value(),
@@ -661,26 +598,18 @@ class ScanPanel(QGroupBox):
             self.status.setStyleSheet("color: #1e8449; font-weight: bold;")
         self.scan_finished.emit(path_str, n)
 
-    def _update_progress_label(self, ix: int, iy: int, iz: int) -> None:
+    def _update_progress_label(self, ix: int, iy: int) -> None:
         total = len(self._path)
-        if self._cfg.z_enable:
-            self.status.setText(
-                f"Punt {self._idx + 1}/{total}  (ix={ix}, iy={iy}, iz={iz})"
-            )
-        else:
-            self.status.setText(
-                f"Punt {self._idx + 1}/{total}  (ix={ix}, iy={iy})"
-            )
+        self.status.setText(
+            f"Punt {self._idx + 1}/{total}  (ix={ix}, iy={iy})"
+        )
 
     def _set_inputs_enabled(self, enabled: bool) -> None:
         for w in (
             self.name_input, self.preset_combo, self.save_preset_btn,
             self.size_x, self.size_y, self.resolution, self.frames,
-            self.z_enable_cb, self.z_min, self.z_max, self.z_steps,
         ):
             w.setEnabled(enabled)
-        if enabled:
-            self._on_z_toggled(self.z_enable_cb.isChecked())
 
     def cancel_if_running(self) -> None:
         if self._state != ScanState.IDLE:
