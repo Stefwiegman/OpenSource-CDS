@@ -64,11 +64,7 @@ class LampPanel(QGroupBox):
         self.toggle_btn = QPushButton("AAN")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self._toggle_on_off)
-        layout.addWidget(self.toggle_btn, 1, 0, 1, 2)
-
-        self.off_btn = QPushButton("UIT")
-        self.off_btn.clicked.connect(lambda: self.slider.setValue(0))
-        layout.addWidget(self.off_btn, 1, 2, 1, 2)
+        layout.addWidget(self.toggle_btn, 1, 0, 1, 4)
 
         self.status = QLabel("Niet verbonden (verbind eerst de motoren).")
         self.status.setProperty("role", "status")

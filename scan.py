@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QGridLayout,
     QGroupBox,
-    QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -181,6 +180,8 @@ class ScanPanel(QGroupBox):
 
     def _build_ui(self) -> None:
         layout = QGridLayout(self)
+        layout.setVerticalSpacing(12)
+        layout.setHorizontalSpacing(10)
         r = 0
 
         # Run-naam
@@ -199,7 +200,7 @@ class ScanPanel(QGroupBox):
         layout.addWidget(self.save_preset_btn, r, 3)
         r += 1
 
-        # Sample-grootte
+        # Sample-grootte (X | Y)
         layout.addWidget(QLabel("Grootte X (mm):"), r, 0)
         self.size_x = QDoubleSpinBox(); self.size_x.setRange(0.001, 100.0)
         self.size_x.setDecimals(3); self.size_x.setValue(5.0)
@@ -210,30 +211,17 @@ class ScanPanel(QGroupBox):
         layout.addWidget(self.size_y, r, 3)
         r += 1
 
-        # Resolutie
-        layout.addWidget(QLabel("Punten X:"), r, 0)
-        self.pts_x = QSpinBox(); self.pts_x.setRange(2, 1000); self.pts_x.setValue(50)
-        layout.addWidget(self.pts_x, r, 1)
-        layout.addWidget(QLabel("Punten Y:"), r, 2)
-        self.pts_y = QSpinBox(); self.pts_y.setRange(2, 1000); self.pts_y.setValue(50)
-        layout.addWidget(self.pts_y, r, 3)
-        r += 1
-
-        # Settle + frames
-        layout.addWidget(QLabel("Settle (ms):"), r, 0)
-        self.settle = QSpinBox(); self.settle.setRange(0, 5000)
-        self.settle.setSingleStep(50); self.settle.setValue(SETTLE_DEFAULT)
-        layout.addWidget(self.settle, r, 1)
+        # Resolutie (N×N raster) + Frames/punt
+        layout.addWidget(QLabel("Resolutie:"), r, 0)
+        self.resolution = QSpinBox()
+        self.resolution.setRange(2, 1000)
+        self.resolution.setValue(50)
+        self.resolution.setToolTip("N × N raster (50 = 2500 punten)")
+        layout.addWidget(self.resolution, r, 1)
         layout.addWidget(QLabel("Frames/punt:"), r, 2)
         self.frames = QSpinBox(); self.frames.setRange(1, 50)
         self.frames.setValue(FRAMES_DEFAULT)
         layout.addWidget(self.frames, r, 3)
-        r += 1
-
-        # Snake-toggle
-        self.snake_cb = QCheckBox("Snake-pad (efficiënter dan raster)")
-        self.snake_cb.setChecked(True)
-        layout.addWidget(self.snake_cb, r, 0, 1, 4)
         r += 1
 
         # Z-stack
@@ -255,36 +243,53 @@ class ScanPanel(QGroupBox):
         layout.addWidget(QLabel("Z-stappen:"), r, 0)
         self.z_steps = QSpinBox(); self.z_steps.setRange(1, 200); self.z_steps.setValue(1)
         layout.addWidget(self.z_steps, r, 1)
+        r += 1
 
+        # Spacer-rij — vult de resterende ruimte tussen form en actie-area
+        layout.setRowStretch(r, 1)
+        r += 1
+
+        # ETA-kaart — eigen rij, prominent gestyled
         self.estimate_lbl = QLabel("—")
-        self.estimate_lbl.setStyleSheet("color: #555;")
-        layout.addWidget(self.estimate_lbl, r, 2, 1, 2)
+        self.estimate_lbl.setObjectName("EtaCard")
+        self.estimate_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.estimate_lbl, r, 0, 1, 4)
         r += 1
 
         # Live-update van schatting
-        for w in (self.size_x, self.size_y, self.pts_x, self.pts_y,
-                  self.settle, self.frames, self.z_steps):
+        for w in (self.size_x, self.size_y, self.resolution,
+                  self.frames, self.z_steps):
             w.valueChanged.connect(self._update_estimate)
         self.z_enable_cb.toggled.connect(self._update_estimate)
 
-        # Start/Cancel
-        btn_row = QHBoxLayout()
+        # Start / Cancel — exact gelijke breedte via QGridLayout-kolommen,
+        # exact gelijke hoogte via setFixedHeight
+        btn_grid = QGridLayout()
+        btn_grid.setContentsMargins(0, 0, 0, 0)
+        btn_grid.setSpacing(10)
+        btn_grid.setColumnStretch(0, 1)
+        btn_grid.setColumnStretch(1, 1)
+
         self.start_btn = QPushButton("▶ Start scan")
         self.start_btn.setObjectName("PrimaryButton")
+        self.start_btn.setFixedHeight(52)
         self.start_btn.clicked.connect(self._start_scan)
-        btn_row.addWidget(self.start_btn)
+        btn_grid.addWidget(self.start_btn, 0, 0)
 
         self.cancel_btn = QPushButton("■ Cancel")
+        self.cancel_btn.setFixedHeight(52)
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self._cancel_scan)
-        btn_row.addWidget(self.cancel_btn)
-        layout.addLayout(btn_row, r, 0, 1, 4)
+        btn_grid.addWidget(self.cancel_btn, 0, 1)
+
+        layout.addLayout(btn_grid, r, 0, 1, 4)
         r += 1
 
-        # Progress
+        # Progress (ONDER de start/cancel rij)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
+        self.progress.setTextVisible(False)
         layout.addWidget(self.progress, r, 0, 1, 4)
         r += 1
 
@@ -295,7 +300,12 @@ class ScanPanel(QGroupBox):
 
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(3, 1)
-        layout.setRowStretch(r, 1)
+
+        # Iets ruimere inputs voor luchtigere uitstraling
+        for w in (self.name_input, self.preset_combo, self.save_preset_btn,
+                  self.size_x, self.size_y, self.resolution, self.frames,
+                  self.z_min, self.z_max, self.z_steps):
+            w.setMinimumHeight(34)
 
         # Initial state
         self._on_z_toggled(False)
@@ -318,11 +328,9 @@ class ScanPanel(QGroupBox):
         p = presets[idx - 1]
         self.size_x.setValue(p.get("size_x_mm", 5.0))
         self.size_y.setValue(p.get("size_y_mm", 5.0))
-        self.pts_x.setValue(int(p.get("points_x", 50)))
-        self.pts_y.setValue(int(p.get("points_y", 50)))
-        self.settle.setValue(int(p.get("settle_ms", SETTLE_DEFAULT)))
+        # Resolutie = points_x (presets met aparte points_y nemen we als points_x over)
+        self.resolution.setValue(int(p.get("points_x", 50)))
         self.frames.setValue(int(p.get("frames_per_point", FRAMES_DEFAULT)))
-        self.snake_cb.setChecked(bool(p.get("snake", True)))
         self.z_enable_cb.setChecked(bool(p.get("z_enable", False)))
         self.z_min.setValue(p.get("z_min_mm", 0.0))
         self.z_max.setValue(p.get("z_max_mm", 0.0))
@@ -345,15 +353,16 @@ class ScanPanel(QGroupBox):
     # ---------- Config-helpers ----------
 
     def _read_config(self, name: str | None = None) -> ScanConfig:
+        res = self.resolution.value()
         return ScanConfig(
             name=name or self.name_input.text() or "scan",
             size_x_mm=self.size_x.value(),
             size_y_mm=self.size_y.value(),
-            points_x=self.pts_x.value(),
-            points_y=self.pts_y.value(),
-            settle_ms=self.settle.value(),
+            points_x=res,
+            points_y=res,
+            settle_ms=SETTLE_DEFAULT,
             frames_per_point=self.frames.value(),
-            snake=self.snake_cb.isChecked(),
+            snake=True,
             z_enable=self.z_enable_cb.isChecked(),
             z_min_mm=self.z_min.value(),
             z_max_mm=self.z_max.value(),
@@ -372,7 +381,7 @@ class ScanPanel(QGroupBox):
         total_s = n * per_pt
         mm = int(total_s // 60)
         ss = int(total_s - mm * 60)
-        self.estimate_lbl.setText(f"{n} punten · ~{mm}m {ss}s")
+        self.estimate_lbl.setText(f"ETA: ~{mm}m {ss}s   ·   {n} punten")
 
     # ---------- Pre-flight checks ----------
 
@@ -666,8 +675,7 @@ class ScanPanel(QGroupBox):
     def _set_inputs_enabled(self, enabled: bool) -> None:
         for w in (
             self.name_input, self.preset_combo, self.save_preset_btn,
-            self.size_x, self.size_y, self.pts_x, self.pts_y,
-            self.settle, self.frames, self.snake_cb,
+            self.size_x, self.size_y, self.resolution, self.frames,
             self.z_enable_cb, self.z_min, self.z_max, self.z_steps,
         ):
             w.setEnabled(enabled)

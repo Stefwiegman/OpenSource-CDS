@@ -19,11 +19,10 @@ import serial
 import serial.tools.list_ports
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QFontDatabase, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
-    QDoubleSpinBox,
     QFrame,
     QGridLayout,
     QGroupBox,
@@ -121,6 +120,14 @@ class MotorPanel(QGroupBox):
         self.calibration: cal.Calibration = cal.load()
 
         layout = QGridLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(10)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 1)
 
         # ---- Rij 0: poort + verbind ----
         layout.addWidget(QLabel("Poort:"), 0, 0)
@@ -143,56 +150,46 @@ class MotorPanel(QGroupBox):
         self.speed_btn.clicked.connect(self._send_speed)
         layout.addWidget(self.speed_btn, 1, 4)
 
-        # ---- Per motor: 2 rijen (jog + kalibratie) ----
+        # ---- Per motor: 2 rijen (↑ + ↓ in kolom 1, rest naast elkaar) ----
         self.step_inputs: list[QSpinBox] = []
         self.target_labels: list[QLabel] = []
-        self.mm_inputs: list[QDoubleSpinBox] = []
         self.zero_btns: list[QPushButton] = []
 
         for i in range(3):
             row_a = 2 + 2 * i
             row_b = row_a + 1
 
-            # Rij a: motor naam, jog ↑↓, step-grootte, target-label
-            layout.addWidget(QLabel(f"Motor {i + 1}"), row_a, 0)
+            # Motor-label spant beide rijen (verticaal gecentreerd)
+            motor_lbl = QLabel(f"Motor {i + 1}")
+            layout.addWidget(motor_lbl, row_a, 0, 2, 1, Qt.AlignVCenter)
 
-            arrows = QWidget()
-            arrows_layout = QVBoxLayout(arrows)
-            arrows_layout.setContentsMargins(0, 0, 0, 0)
-            arrows_layout.setSpacing(2)
-            up_btn = QPushButton("↑")
-            up_btn.setFixedWidth(40)
+            # ▲ op row_a, ▼ op row_b — eigen object-name voor duidelijke styling
+            up_btn = QPushButton("▲")
+            up_btn.setObjectName("JogButton")
+            up_btn.setToolTip("Stappen omhoog")
+            up_btn.setFixedSize(48, 30)
             up_btn.clicked.connect(lambda _c, n=i: self._jog(n, +1))
-            down_btn = QPushButton("↓")
-            down_btn.setFixedWidth(40)
-            down_btn.clicked.connect(lambda _c, n=i: self._jog(n, -1))
-            arrows_layout.addWidget(up_btn)
-            arrows_layout.addWidget(down_btn)
-            layout.addWidget(arrows, row_a, 1)
+            layout.addWidget(up_btn, row_a, 1, Qt.AlignVCenter | Qt.AlignHCenter)
 
+            down_btn = QPushButton("▼")
+            down_btn.setObjectName("JogButton")
+            down_btn.setToolTip("Stappen omlaag")
+            down_btn.setFixedSize(48, 30)
+            down_btn.clicked.connect(lambda _c, n=i: self._jog(n, -1))
+            layout.addWidget(down_btn, row_b, 1, Qt.AlignVCenter | Qt.AlignHCenter)
+
+            # Spinbox spant beide rijen → komt centraal tussen ▲ en ▼ te staan
             spin = QSpinBox()
             spin.setRange(10, MAX_STEPS)
             spin.setSingleStep(10)
             spin.setValue(1000)
             spin.setSuffix(" stappen")
             spin.setFixedWidth(130)
-            layout.addWidget(spin, row_a, 2)
+            layout.addWidget(spin, row_a, 2, 2, 1, Qt.AlignVCenter)
 
             tlbl = QLabel("target: 0")
             tlbl.setStyleSheet("color: gray;")
             layout.addWidget(tlbl, row_a, 3, 1, 2)
-
-            # Rij b: mm/stap-veld + Zet-0-knop
-            mm_lbl = QLabel("mm/stap:")
-            mm_lbl.setStyleSheet("color: #777;")
-            layout.addWidget(mm_lbl, row_b, 1)
-            mm_spin = QDoubleSpinBox()
-            mm_spin.setRange(0.0, 1.0)
-            mm_spin.setDecimals(6)
-            mm_spin.setSingleStep(0.0001)
-            mm_spin.setValue(self.calibration.motors[i].mm_per_step)
-            mm_spin.setFixedWidth(130)
-            layout.addWidget(mm_spin, row_b, 2)
 
             zero_btn = QPushButton("Zet 0 hier")
             zero_btn.setToolTip(
@@ -203,32 +200,15 @@ class MotorPanel(QGroupBox):
 
             self.step_inputs.append(spin)
             self.target_labels.append(tlbl)
-            self.mm_inputs.append(mm_spin)
             self.zero_btns.append(zero_btn)
 
-        # ---- Save / Load kalibratie ----
-        cal_row = 2 + 2 * 3   # = 8
-        cal_box = QHBoxLayout()
-        self.save_cal_btn = QPushButton("💾 Save kalibratie")
-        self.save_cal_btn.clicked.connect(self._save_calibration)
-        self.load_cal_btn = QPushButton("📂 Load kalibratie")
-        self.load_cal_btn.clicked.connect(self._load_calibration)
-        cal_box.addWidget(self.save_cal_btn)
-        cal_box.addWidget(self.load_cal_btn)
-        layout.addLayout(cal_box, cal_row, 0, 1, 5)
-
-        # ---- STOP ----
-        self.stop_btn = QPushButton("STOP  ■  alle motoren direct stoppen")
-        self.stop_btn.setObjectName("DangerButton")
-        self.stop_btn.clicked.connect(self._stop_all)
-        layout.addWidget(self.stop_btn, cal_row + 1, 0, 1, 5)
-
         # ---- status ----
+        status_row = 2 + 2 * 3   # = 8
         self.status = QLabel("Niet verbonden.")
         self.status.setStyleSheet("color: gray;")
-        layout.addWidget(self.status, cal_row + 2, 0, 1, 5)
+        layout.addWidget(self.status, status_row, 0, 1, 5)
 
-        layout.setRowStretch(cal_row + 3, 1)
+        layout.setRowStretch(status_row + 1, 1)
 
         # render initial mm-target labels
         for i in range(3):
@@ -249,7 +229,7 @@ class MotorPanel(QGroupBox):
     def _refresh_target_label(self, i: int) -> None:
         """Werk target-label bij — toon mm als gekalibreerd."""
         target = self.targets[i]
-        mm_per_step = self.mm_inputs[i].value()
+        mm_per_step = self.calibration.motors[i].mm_per_step
         if mm_per_step > 0:
             mm = target * mm_per_step
             self.target_labels[i].setText(f"target: {target}  ({mm:+.4f} mm)")
@@ -378,7 +358,6 @@ class MotorPanel(QGroupBox):
             return
         for i, p in enumerate(positions):
             self.calibration.motors[i].last_position = p
-            self.calibration.motors[i].mm_per_step = self.mm_inputs[i].value()
 
     # -----------------------------------------------------------
     #  Acties: snelheid / jog / set-zero / stop / save+load cal
@@ -428,9 +407,7 @@ class MotorPanel(QGroupBox):
         self.status.setStyleSheet("color: #c0392b; font-weight: bold;")
 
     def _save_calibration(self) -> None:
-        # Lees mm/stap uit UI, vraag actuele positie aan firmware
-        for i in range(3):
-            self.calibration.motors[i].mm_per_step = self.mm_inputs[i].value()
+        # mm/stap is vast (uit yaml); enkel actuele positie ophalen
         if self.serial and self.serial.is_open:
             self._refresh_calibration_positions(silent=False)
         try:
@@ -444,8 +421,7 @@ class MotorPanel(QGroupBox):
 
     def _load_calibration(self) -> None:
         self.calibration = cal.load()
-        for i, m in enumerate(self.calibration.motors):
-            self.mm_inputs[i].setValue(m.mm_per_step)
+        for i in range(3):
             self._refresh_target_label(i)
         self.status.setText(
             f"Kalibratie geladen ({self.calibration.saved_at or 'geen tijd'})."
@@ -496,7 +472,7 @@ class MotorPanel(QGroupBox):
     # -----------------------------------------------------------
 
     def mm_per_step(self, motor_index: int) -> float:
-        return self.mm_inputs[motor_index].value()
+        return self.calibration.motors[motor_index].mm_per_step
 
 
 # -------------------- Moku --------------------
@@ -620,9 +596,9 @@ class MokuPanel(QGroupBox):
 
         layout.addLayout(controls)
 
-        fig = Figure(figsize=(8, 3))
+        fig = Figure(figsize=(8, 4))
         self.canvas = FigureCanvas(fig)
-        self.canvas.setMinimumHeight(180)
+        self.canvas.setMinimumHeight(280)
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.ax = fig.add_subplot(111)
         self.ax.set_xlabel("tijd (s)")
@@ -873,7 +849,7 @@ class CameraCard(QFrame):
         live = QLabel("● LIVE")
         live.setStyleSheet(
             "color: #ef4444; font-weight: 600;"
-            " font-family: 'JetBrains Mono', Consolas, monospace;"
+            " font-family: 'Inter', system-ui, sans-serif;"
             " font-size: 11px; letter-spacing: 1px;"
             " background-color: rgba(239,68,68,0.1);"
             " border: 1px solid rgba(239,68,68,0.3);"
@@ -939,6 +915,13 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.motor_panel, "Setup")
         self.tabs.setCurrentIndex(2)  # start in Setup om eerst te kunnen verbinden
 
+        # Lamp-paneel hoort alleen bij de Setup-tab
+        SETUP_TAB_INDEX = 2
+        self.tabs.currentChanged.connect(
+            lambda idx: self.lamp_panel.setVisible(idx == SETUP_TAB_INDEX)
+        )
+        self.lamp_panel.setVisible(self.tabs.currentIndex() == SETUP_TAB_INDEX)
+
         sidebar = QWidget()
         sidebar_v = QVBoxLayout(sidebar)
         sidebar_v.setContentsMargins(0, 0, 0, 0)
@@ -956,13 +939,13 @@ class MainWindow(QMainWindow):
         h_splitter.setChildrenCollapsible(False)
 
         # ---- vertical splitter (top | moku) ----
-        self.moku_panel.setMinimumHeight(280)
+        self.moku_panel.setMinimumHeight(380)
         v_splitter = QSplitter(Qt.Vertical)
         v_splitter.addWidget(h_splitter)
         v_splitter.addWidget(self.moku_panel)
-        v_splitter.setStretchFactor(0, 2)
+        v_splitter.setStretchFactor(0, 1)
         v_splitter.setStretchFactor(1, 1)
-        v_splitter.setSizes([520, 320])
+        v_splitter.setSizes([460, 440])
         v_splitter.setChildrenCollapsible(False)
 
         # ---- root widget ----
@@ -993,6 +976,17 @@ class MainWindow(QMainWindow):
 
 # -------------------- App entry --------------------
 
+def _load_fonts() -> None:
+    """Registreer gebundelde Inter-fonts (otf/ttf) zodat QSS ze kan gebruiken."""
+    from pathlib import Path
+    fonts_dir = Path(__file__).parent / "fonts"
+    if not fonts_dir.exists():
+        return
+    for pattern in ("*.otf", "*.ttf"):
+        for font_file in fonts_dir.glob(pattern):
+            QFontDatabase.addApplicationFont(str(font_file))
+
+
 def _load_stylesheet(app: QApplication) -> None:
     """Laad styles.qss als hij naast ui.py bestaat. Stilte als ontbrekend."""
     try:
@@ -1007,6 +1001,7 @@ def _load_stylesheet(app: QApplication) -> None:
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("Bep-Project")
+    _load_fonts()
     _load_stylesheet(app)
     win = MainWindow()
     win.show()

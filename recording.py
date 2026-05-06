@@ -78,6 +78,7 @@ class RecordingPanel(QGroupBox):
         layout.addWidget(self.status, 2, 0, 1, 3)
 
         layout.setColumnStretch(1, 1)
+        layout.setRowStretch(3, 1)
 
         self._tick = QTimer(self)
         self._tick.setInterval(STATUS_REFRESH_MS)
