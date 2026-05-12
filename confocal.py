@@ -19,11 +19,11 @@ import matplotlib.pyplot as plt
 
 
 # --- Default parameters (mm) ---
-f1 = 20.0
-f2 = 250.0
-r0 = 1.0           # beam radius at lens 1 (r1 in the paper)
-r_d = 0.4          # diaphragm radius (r_diaphragm)
-L = 65.0
+f1 = 25.0
+f2 = 150.0
+r0 = 2.75           # beam radius at lens 1 (r1 in the paper)
+r_d = 0.5          # diaphragm radius (r_diaphragm)
+L = 66.0
 I0 = 1.0
 
 
