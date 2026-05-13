@@ -12,6 +12,7 @@ Afhankelijkheden:
 from __future__ import annotations
 
 import sys
+import threading
 
 import cv2
 import numpy as np
@@ -44,6 +45,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 import calibration as cal
+from camera_settings import CameraSettingsPanel
 from lamp import LampPanel
 from recording import RecordingPanel
 from scan import ScanPanel
@@ -66,6 +68,9 @@ class CameraThread(QThread):
         super().__init__()
         self._index = index
         self._running = False
+        # Thread-safe wachtrij voor OpenCV-property changes (UI → run-loop)
+        self._pending_props: dict[int, float] = {}
+        self._props_lock = threading.Lock()
 
     def run(self) -> None:
         cap = cv2.VideoCapture(self._index, cv2.CAP_DSHOW)
@@ -78,6 +83,13 @@ class CameraThread(QThread):
         self._running = True
         try:
             while self._running:
+                # Drain pending property-changes en pas ze toe vóór 't volgende frame
+                with self._props_lock:
+                    pending = self._pending_props
+                    self._pending_props = {}
+                for prop_id, value in pending.items():
+                    cap.set(prop_id, value)
+
                 ok, frame = cap.read()
                 if not ok:
                     continue
@@ -88,6 +100,11 @@ class CameraThread(QThread):
     def stop(self) -> None:
         self._running = False
         self.wait()
+
+    def set_property(self, prop_id: int, value: float) -> None:
+        """Thread-safe: wachtrij een OpenCV cap.set() voor het volgende frame."""
+        with self._props_lock:
+            self._pending_props[prop_id] = value
 
 
 class CameraPanel(QLabel):
@@ -890,6 +907,9 @@ class MainWindow(QMainWindow):
         self.cam_thread.frame_ready.connect(self.camera_panel.update_frame)
         self.cam_thread.start()
 
+        # Camera-instellingen tab (heeft thread nodig voor set_property)
+        self.camera_settings_panel = CameraSettingsPanel(self.cam_thread)
+
         # ---- top bar ----
         self.top_bar = TopBar(
             motor_panel=self.motor_panel,
@@ -902,7 +922,8 @@ class MainWindow(QMainWindow):
 
         # ---- sidebar (rechts) = tabs + altijd-zichtbare lamp ----
         # Onderdruk redundante QGroupBox-titel — de tab-naam volstaat al
-        for panel in (self.recording_panel, self.scan_panel, self.motor_panel):
+        for panel in (self.recording_panel, self.scan_panel,
+                      self.motor_panel, self.camera_settings_panel):
             panel.setTitle("")
             panel.setProperty("inTab", True)
             panel.style().unpolish(panel)
@@ -913,6 +934,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.recording_panel, "Manual")
         self.tabs.addTab(self.scan_panel, "Auto Scan")
         self.tabs.addTab(self.motor_panel, "Setup")
+        self.tabs.addTab(self.camera_settings_panel, "Camera")
         self.tabs.setCurrentIndex(2)  # start in Setup om eerst te kunnen verbinden
 
         # Lamp-paneel hoort alleen bij de Setup-tab

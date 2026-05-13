@@ -64,7 +64,12 @@ class LampPanel(QGroupBox):
         self.toggle_btn = QPushButton("AAN")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.clicked.connect(self._toggle_on_off)
-        layout.addWidget(self.toggle_btn, 1, 0, 1, 4)
+        layout.addWidget(self.toggle_btn, 1, 0, 1, 2)
+
+        self.off_btn = QPushButton("UIT")
+        self.off_btn.setToolTip("Forceer lamp direct uit (LAMP 0)")
+        self.off_btn.clicked.connect(self._force_off)
+        layout.addWidget(self.off_btn, 1, 2, 1, 2)
 
         self.status = QLabel("Niet verbonden (verbind eerst de motoren).")
         self.status.setProperty("role", "status")
@@ -75,11 +80,17 @@ class LampPanel(QGroupBox):
     # ---- slider/throttle plumbing ----------------------------------
 
     def _on_slider_change(self, value: int) -> None:
+        """Single source of truth — toggle-state + tekst worden hier gesynct."""
         self._pending = value
         if not self._throttle.isActive():
             self._throttle.start()
         if value > 0:
             self._previous_on_value = value
+            self.toggle_btn.setChecked(True)
+            self.toggle_btn.setText("UIT")
+        else:
+            self.toggle_btn.setChecked(False)
+            self.toggle_btn.setText("AAN")
 
     def _flush(self) -> None:
         if self._pending == self._last_sent:
@@ -90,13 +101,21 @@ class LampPanel(QGroupBox):
     # ---- knop-acties ------------------------------------------------
 
     def _toggle_on_off(self, checked: bool) -> None:
+        """Toggle-knop: aan = vorige waarde (of 128), uit = 0. State-sync via slider."""
         if checked:
-            self.toggle_btn.setText("UIT-toggle")
             target = self._previous_on_value or 128
             self.slider.setValue(target)
         else:
-            self.toggle_btn.setText("AAN")
             self.slider.setValue(0)
+
+    def _force_off(self) -> None:
+        """Expliciete UIT-knop: stuur direct LAMP 0 zonder throttle."""
+        self.slider.setValue(0)
+        # Bypass throttle voor onmiddellijke respons
+        if self._send(0):
+            self._last_sent = 0
+            self._pending = 0
+            self._throttle.stop()
 
     # ---- serial -----------------------------------------------------
 
