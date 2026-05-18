@@ -1,47 +1,48 @@
 // Bep-Project firmware voor Arduino Nano
+// Hardware: 3x 28BYJ-48 + ULN2003 + WS2812B-8 (NeoPixel)
 //
 // Ontvangt ASCII-commando's over USB-serial @ 9600 baud:
-//   "1 500\n"      -> motor 1 naar absolute positie 500 stappen
-//   "2 -250\n"     -> motor 2 naar -250
-//   "3 1000\n"     -> motor 3 naar 1000
-//   "SPEED 800\n"  -> max snelheid voor alle motoren (stappen/s)
-//   "STOP\n"       -> noodstop, alle motoren onmiddellijk stil
-//   "LAMP 128\n"   -> WS2812B-helderheid 0..255 (alle 8 pixels wit)
-//   "SETPOS 1 0\n" -> zet motor 1 op positie 0 zonder te bewegen (soft-home)
-//   "WHERE\n"      -> antwoord: "POS <m1> <m2> <m3>"  (huidige posities)
-//   "BUSY?\n"      -> antwoord: "BUSY 1" (rijdt) of "BUSY 0" (stilstand)
+//   "1 500\n"          -> motor 1 naar absolute positie 500 stappen
+//   "2 -250\n"         -> motor 2 naar -250
+//   "3 1000\n"         -> motor 3 naar 1000
+//   "SPEED 600\n"      -> max snelheid voor alle motoren (stappen/s)
+//   "STOP\n"           -> noodstop, alle motoren onmiddellijk stil
+//   "LAMP 128\n"       -> WS2812B-helderheid 0..255 (alle 8 pixels wit)
+//   "SETPOS 1 0\n"     -> zet motor 1 op positie 0 zonder te bewegen (soft-home)
+//   "WHERE\n"          -> antwoord: "POS <m1> <m2> <m3>"  (huidige posities)
+//   "BUSY?\n"          -> antwoord: "BUSY 1" (rijdt) of "BUSY 0" (stilstand)
 //   "GOTO 100 -50 0\n" -> alle 3 motoren tegelijk naar absolute target
 //
-// Hardware-aannames (PAS AAN INDIEN ANDERS):
-//   - Drie A4988/DRV8825 drivers op CNC-shield V3 layout:
-//       Motor 1: STEP=D2, DIR=D5
-//       Motor 2: STEP=D3, DIR=D6
-//       Motor 3: STEP=D4, DIR=D7
-//       ENABLE (alle drivers): D8 (active LOW)
+// Hardware-aannames:
+//   - 3x ULN2003 driverbord met 28BYJ-48 motor:
+//       Motor 1 ULN2003: IN1=D2, IN2=D3, IN3=D4, IN4=D5
+//       Motor 2 ULN2003: IN1=D6, IN2=D7, IN3=D8, IN4=D9
+//       Motor 3 ULN2003: IN1=D10, IN2=D11, IN3=D12, IN4=D13  (D13 = onboard LED, flickert mee)
+//     ULN2003-boards: VCC = aparte 5V voeding, GND = gemeenschappelijk met Arduino GND
 //   - WS2812B-8 ring: DIN op A2 (= digital pin 16), via 470 ohm
+//
+// AccelStepper FULL4WIRE pin-volgorde-truc:
+//   28BYJ-48 + ULN2003 wordt fysiek bedraad als IN1-IN2-IN3-IN4,
+//   maar het step-sequence patroon is IN1-IN3-IN2-IN4.
+//   Daarom swappen we pin 2 en pin 3 in de constructor.
 //
 // Library: Adafruit NeoPixel + AccelStepper (beide via Library Manager)
 
 #include <AccelStepper.h>
 #include <Adafruit_NeoPixel.h>
 
-// ---- Motor pin-config (verifieer dit met je bedrading) ---------
-const uint8_t M1_STEP = 2, M1_DIR = 5;
-const uint8_t M2_STEP = 3, M2_DIR = 6;
-const uint8_t M3_STEP = 4, M3_DIR = 7;
-const uint8_t MOTOR_ENABLE = 8;   // active LOW
+// ---- Motor pin-config (FULL4WIRE, volgorde IN1, IN3, IN2, IN4) -
+AccelStepper m1(AccelStepper::FULL4WIRE, 2,  4,  3,  5);
+AccelStepper m2(AccelStepper::FULL4WIRE, 6,  8,  7,  9);
+AccelStepper m3(AccelStepper::FULL4WIRE, 10, 12, 11, 13);
 
 // ---- Lamp config -----------------------------------------------
 const uint8_t LAMP_PIN   = 16;    // A2 = D16 op de Nano
 const uint8_t LAMP_COUNT = 8;
 
-// ---- Globals ---------------------------------------------------
-AccelStepper m1(AccelStepper::DRIVER, M1_STEP, M1_DIR);
-AccelStepper m2(AccelStepper::DRIVER, M2_STEP, M2_DIR);
-AccelStepper m3(AccelStepper::DRIVER, M3_STEP, M3_DIR);
-
 Adafruit_NeoPixel lamp(LAMP_COUNT, LAMP_PIN, NEO_GRB + NEO_KHZ800);
 
+// ---- Globals ---------------------------------------------------
 float currentMaxSpeed = 500.0f;
 String inbuf;
 
@@ -134,7 +135,7 @@ void handleCommand(const String& line) {
       case 3: m = &m3; break;
       default: return;
     }
-    m->setCurrentPosition(pos);  // verplaatst niet, hertelt alleen
+    m->setCurrentPosition(pos);
     Serial.print("OK SETPOS "); Serial.print(motor);
     Serial.print(' '); Serial.println(pos);
     return;
@@ -156,9 +157,6 @@ void handleCommand(const String& line) {
 
 void setup() {
   Serial.begin(9600);
-
-  pinMode(MOTOR_ENABLE, OUTPUT);
-  digitalWrite(MOTOR_ENABLE, LOW);   // drivers aan
 
   applySpeed(currentMaxSpeed);
 
