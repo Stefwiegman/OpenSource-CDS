@@ -71,6 +71,8 @@ class CameraThread(QThread):
         # Thread-safe wachtrij voor OpenCV-property changes (UI → run-loop)
         self._pending_props: dict[int, float] = {}
         self._props_lock = threading.Lock()
+        # Zwart-wit toggle — bool reads/writes zijn atomair onder de GIL
+        self._grayscale = False
 
     def run(self) -> None:
         cap = cv2.VideoCapture(self._index, cv2.CAP_DSHOW)
@@ -80,6 +82,30 @@ class CameraThread(QThread):
             )
             print(f"Kan camera met index {self._index} niet openen.")
             return
+
+        # ---- Camera tunen voor maximale beeldkwaliteit ----
+        # FOURCC vóór resolutie: DirectShow weigert hoge resoluties op YUY2 (raw)
+        # over USB 2.0, met MJPG (compressed) gaat 1080p@30 vrijwel altijd wel.
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        # Probeer 1080p eerst, val terug naar 720p, anders houd wat de cam geeft.
+        for target_w, target_h in ((1920, 1080), (1280, 720)):
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_w)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_h)
+            if (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) == target_w
+                    and int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) == target_h):
+                break
+        cap.set(cv2.CAP_PROP_FPS, 30)
+        # BUFFERSIZE=1: nieuwste frame, geen achterstand → sliders voelen direct
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Auto-focus/WB aan-by-default — manual override komt in tier 2 UX
+        cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
+        cap.set(cv2.CAP_PROP_AUTO_WB, 1)
+
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        print(f"Camera geopend op {w}x{h} @ {fps:.0f}fps (MJPG)")
+
         self._running = True
         try:
             while self._running:
@@ -93,6 +119,10 @@ class CameraThread(QThread):
                 ok, frame = cap.read()
                 if not ok:
                     continue
+                if self._grayscale:
+                    # GRAY→BGR terug zodat downstream (cvtColor BGR2RGB) blijft werken
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    frame = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
                 self.frame_ready.emit(frame)
         finally:
             cap.release()
@@ -105,6 +135,9 @@ class CameraThread(QThread):
         """Thread-safe: wachtrij een OpenCV cap.set() voor het volgende frame."""
         with self._props_lock:
             self._pending_props[prop_id] = value
+
+    def set_grayscale(self, on: bool) -> None:
+        self._grayscale = bool(on)
 
 
 class CameraPanel(QLabel):
@@ -120,9 +153,11 @@ class CameraPanel(QLabel):
         h, w, ch = rgb.shape
         bytes_per_line = ch * w
         qimg = QImage(rgb.tobytes(), w, h, bytes_per_line, QImage.Format_RGB888)
-        pix = QPixmap.fromImage(qimg).scaled(
-            self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-        )
+        pix = QPixmap.fromImage(qimg)
+        # Alleen downscalen — upscalen geeft blur, beter native + zwarte rand
+        panel = self.size()
+        if w > panel.width() or h > panel.height():
+            pix = pix.scaled(panel, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.setPixmap(pix)
 
 
@@ -582,6 +617,10 @@ class MokuPanel(QGroupBox):
         super().__init__("Moku:Go fotodetector")
         self.thread: MokuThread | None = None
         self._timebase = MOKU_DEFAULT_TIMEBASE
+        self._burst_dl = None
+        self._burst_cfg: tuple[str, int, str, str] | None = None
+        self._last_values: object = None  # laatste live-frame, voor Set I0
+        self.I0: float | None = None      # baseline-voltage voor V→dz1 conversie
 
         layout = QVBoxLayout(self)
 
@@ -666,10 +705,24 @@ class MokuPanel(QGroupBox):
 
     def _on_data(self, t, values) -> None:
         self.frame.emit(t, values)
+        self._last_values = values
         self.line.set_data(t, values)
         self.ax.relim()
         self.ax.autoscale_view(scalex=False, scaley=True)
         self.canvas.draw_idle()
+
+    def set_I0_from_current(self) -> float | None:
+        """Snapshot de gemiddelde live-voltage als baseline I0. None als geen data."""
+        if self._last_values is None:
+            return None
+        arr = np.asarray(self._last_values, dtype=float)
+        if arr.size == 0:
+            return None
+        self.I0 = float(np.mean(arr))
+        return self.I0
+
+    def clear_I0(self) -> None:
+        self.I0 = None
 
     def _on_failed(self, msg: str) -> None:
         self.status.setText(msg)
@@ -685,7 +738,77 @@ class MokuPanel(QGroupBox):
         self.connect_btn.setEnabled(True)
 
     def close_moku(self) -> None:
+        if self._burst_dl is not None:
+            try:
+                self._burst_dl.close()
+            except Exception:
+                pass
+            self._burst_dl = None
         self._stop_thread()
+
+    # ---------- Burst-mode (Datalogger) ----------
+    #
+    # Wordt gebruikt door ScanPanel: één keer start_burst_mode aan begin van
+    # de scan, daarna acquire_burst per punt, end_burst_mode aan het eind.
+    # Tijdens burst-mode draait de live Oscilloscope-grafiek niet.
+
+    def start_burst_mode(self) -> None:
+        if self._burst_dl is not None:
+            return
+        if self.thread is None or not self.thread.isRunning():
+            raise RuntimeError("Moku niet verbonden — verbind eerst via 'Verbind'.")
+
+        address = self.address_input.text().strip()
+        channel = int(self.channel_combo.currentText())
+        coupling = self.coupling_combo.currentText()
+        range_ = self.range_combo.currentText()
+        self._burst_cfg = (address, channel, coupling, range_)
+
+        self._stop_thread()
+        i0_msg = f"I0={self.I0:.4f}V → dz1 (mm)" if self.I0 else "geen I0 — V-fallback"
+        self.status.setText(
+            f"Burst-mode (Datalogger) — live preview gepauzeerd. [{i0_msg}]"
+        )
+        self.status.setStyleSheet("color: #b8860b;")
+
+        from datalogger import MokuDatalogger
+        self._burst_dl = MokuDatalogger(address, channel, range_, coupling, I0=self.I0)
+        try:
+            self._burst_dl.open()
+        except Exception:
+            self._burst_dl = None
+            self._restart_preview()
+            raise
+
+    def acquire_burst(self, fs: int, T: float) -> np.ndarray:
+        if self._burst_dl is None:
+            raise RuntimeError("Burst-mode niet actief — roep eerst start_burst_mode().")
+        return self._burst_dl.acquire_burst(fs, T)
+
+    def end_burst_mode(self) -> None:
+        if self._burst_dl is None:
+            return
+        try:
+            self._burst_dl.close()
+        except Exception:
+            pass
+        self._burst_dl = None
+        self._restart_preview()
+
+    def _restart_preview(self) -> None:
+        if self._burst_cfg is None:
+            return
+        address, channel, coupling, range_ = self._burst_cfg
+        self.thread = MokuThread(address, channel, coupling, range_,
+                                 self._timebase)
+        self.thread.connected.connect(self._on_connected)
+        self.thread.data_ready.connect(self._on_data)
+        self.thread.failed.connect(self._on_failed)
+        self.thread.start()
+        self.connect_btn.setText("Bezig...")
+        self.connect_btn.setEnabled(False)
+        self.status.setText(f"Live preview herstarten op {address} ...")
+        self.status.setStyleSheet("color: gray;")
 
 
 # -------------------- Main window --------------------

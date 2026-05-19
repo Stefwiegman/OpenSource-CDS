@@ -1,216 +1,290 @@
-"""Live recorder voor Bep-Project: per Moku-frame een CSV-rij wegschrijven met
-motor-positie, lamp-helderheid en spannings-samenvatting. Voor post-hoc
-3D-analyse via viewer.py.
+"""Manual burst-recording voor Bep-Project.
 
-CSV-formaat volgt gridsearch.py: ';' als separator en ',' als decimaal,
-direct te openen in Excel met NL-locale.
+Eén klik op 'Burst' → één Datalogger-burst (fs × T samples) bij de huidige
+motor-positie. Output:
+
+    data/manual_<timestamp>_<naam>/
+        burst.csv         # 2 kolommen: t_s en (dz1_mm | voltage_V), NL-locale
+        metadata.txt      # Moku-config, I0, motor-positie, statistics
+
+Werkt als snelle handmatige test van de hele pipeline (Moku-frontend →
+Datalogger → V→dz1 conversie) — dezelfde acquisitie als ScanPanel doet per
+punt, maar nu één klik = één punt. Als dit werkt, werkt de auto-scan ook.
 """
 from __future__ import annotations
 
-import csv
 import os
 import subprocess
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QGroupBox,
+    QApplication,
+    QFrame,
     QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSpinBox,
 )
 
 
-CSV_HEADER = [
-    "t_iso", "t_elapsed_s",
-    "motor1", "motor2", "motor3",
-    "motor1_mm", "motor2_mm", "motor3_mm",
-    "lamp",
-    "V_mean", "V_min", "V_max", "V_std", "V_pp", "n_samples",
-]
 DATA_ROOT = Path("data")
-STATUS_REFRESH_MS = 500
-
-
-def _fmt(v: float) -> str:
-    """NL-locale: punt -> komma, 5 decimalen."""
-    return f"{v:.5f}".replace(".", ",")
+FS_DEFAULT_KHZ = 100
+T_DEFAULT_MS = 500
 
 
 class RecordingPanel(QGroupBox):
     def __init__(self, moku_panel, motor_panel, lamp_panel) -> None:
-        super().__init__("Opname")
+        super().__init__("Manual burst")
         self.moku_panel = moku_panel
         self.motor_panel = motor_panel
         self.lamp_panel = lamp_panel
-
-        self._file = None
-        self._writer = None
-        self._t_start = 0.0
-        self._n_rows = 0
         self._run_dir: Path | None = None
 
         layout = QGridLayout(self)
 
-        layout.addWidget(QLabel("Run-naam:"), 0, 0)
-        self.name_input = QLineEdit("scan")
-        layout.addWidget(self.name_input, 0, 1, 1, 2)
+        # ---- Run-naam ----
+        layout.addWidget(QLabel("Naam:"), 0, 0)
+        self.name_input = QLineEdit("manual")
+        layout.addWidget(self.name_input, 0, 1, 1, 3)
 
-        self.record_btn = QPushButton("● Record")
-        self.record_btn.setCheckable(True)
+        # ---- Burst parameters ----
+        layout.addWidget(QLabel("Sample-rate:"), 1, 0)
+        self.fs_khz = QSpinBox()
+        self.fs_khz.setRange(1, 1000)
+        self.fs_khz.setSingleStep(10)
+        self.fs_khz.setValue(FS_DEFAULT_KHZ)
+        self.fs_khz.setSuffix(" kSa/s")
+        self.fs_khz.setToolTip("Hoger = hogere maximale frequentie (Nyquist = fs/2)")
+        layout.addWidget(self.fs_khz, 1, 1)
+
+        layout.addWidget(QLabel("Burst-duur:"), 1, 2)
+        self.T_ms = QSpinBox()
+        self.T_ms.setRange(10, 10000)
+        self.T_ms.setSingleStep(50)
+        self.T_ms.setValue(T_DEFAULT_MS)
+        self.T_ms.setSuffix(" ms")
+        self.T_ms.setToolTip("Langer = fijnere FFT-frequentie-resolutie (1/T)")
+        layout.addWidget(self.T_ms, 1, 3)
+
+        # ---- Burst-knop + Open folder ----
+        self.record_btn = QPushButton("● Burst")
         self.record_btn.setObjectName("DangerButton")
-        self.record_btn.toggled.connect(self._toggle_record)
-        layout.addWidget(self.record_btn, 1, 0, 1, 2)
+        self.record_btn.setToolTip(
+            "Doe één Datalogger-burst bij de huidige motor-positie.\n"
+            "Met I0 ingesteld: output is verplaatsing (dz1) in mm.\n"
+            "Zonder I0: output is voltage in V."
+        )
+        self.record_btn.clicked.connect(self._take_burst)
+        layout.addWidget(self.record_btn, 2, 0, 1, 2)
 
         self.open_btn = QPushButton("Open folder")
         self.open_btn.clicked.connect(self._open_folder)
         self.open_btn.setEnabled(False)
-        layout.addWidget(self.open_btn, 1, 2)
+        layout.addWidget(self.open_btn, 2, 2, 1, 2)
 
-        self.status = QLabel("Niet aan het opnemen.")
+        # ---- Status ----
+        self.status = QLabel("Klaar — klik 'Burst' om één meting te doen.")
         self.status.setStyleSheet("color: gray;")
-        layout.addWidget(self.status, 2, 0, 1, 3)
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status, 3, 0, 1, 4)
+
+        # ---- I0-calibratie ----
+        i0_row = QHBoxLayout()
+        i0_row.setSpacing(8)
+        self.set_i0_btn = QPushButton("Set I0")
+        self.set_i0_btn.setToolTip(
+            "Snapshot de huidige gemiddelde fotodetector-spanning als I0-baseline.\n"
+            "Daarna wordt V → verplaatsing (dz1, mm) gerekend via confocale formule A6."
+        )
+        self.set_i0_btn.clicked.connect(self._set_I0)
+        i0_row.addWidget(self.set_i0_btn)
+
+        self.clear_i0_btn = QPushButton("Clear")
+        self.clear_i0_btn.setToolTip("Wis I0 — burst valt terug op voltage-output.")
+        self.clear_i0_btn.clicked.connect(self._clear_I0)
+        i0_row.addWidget(self.clear_i0_btn)
+
+        self.i0_label = QLabel("I0 = niet ingesteld")
+        self.i0_label.setStyleSheet("color: gray;")
+        i0_row.addWidget(self.i0_label, stretch=1)
+
+        i0_wrap = QFrame()
+        i0_wrap.setLayout(i0_row)
+        layout.addWidget(i0_wrap, 4, 0, 1, 4)
 
         # ---- Recente runs ----
         runs_lbl = QLabel("Recente runs")
         runs_lbl.setProperty("role", "caption")
-        layout.addWidget(runs_lbl, 3, 0, 1, 3)
+        layout.addWidget(runs_lbl, 5, 0, 1, 4)
 
         self.runs_list = QListWidget()
         self.runs_list.setToolTip("Dubbel-klik om de map te openen")
         self.runs_list.itemDoubleClicked.connect(self._open_run_folder)
-        layout.addWidget(self.runs_list, 4, 0, 1, 3)
+        layout.addWidget(self.runs_list, 6, 0, 1, 4)
 
         layout.setColumnStretch(1, 1)
-        layout.setRowStretch(4, 1)
+        layout.setColumnStretch(3, 1)
+        layout.setRowStretch(6, 1)
 
-        self._tick = QTimer(self)
-        self._tick.setInterval(STATUS_REFRESH_MS)
-        self._tick.timeout.connect(self._refresh_status)
-
-        # Luister naar elk Moku-frame
-        self.moku_panel.frame.connect(self._on_frame)
-
-        # Eerste populatie van de runs-lijst
         self._refresh_runs()
 
-    # ---- record-toggle --------------------------------------------
+    # ---- I0-calibratie ----
 
-    def _toggle_record(self, on: bool) -> None:
-        if on:
-            self._start_recording()
+    def _set_I0(self) -> None:
+        I0 = self.moku_panel.set_I0_from_current()
+        if I0 is None:
+            self.status.setText(
+                "Geen Moku-data — verbind eerst en wacht op een live frame."
+            )
+            self.status.setStyleSheet("color: #b8860b;")
+            return
+        self._refresh_i0_label()
+        self.status.setText(f"I0 ingesteld op {I0:.4f} V.")
+        self.status.setStyleSheet("color: #1e8449;")
+
+    def _clear_I0(self) -> None:
+        self.moku_panel.clear_I0()
+        self._refresh_i0_label()
+        self.status.setText("I0 gewist — burst geeft voltage terug.")
+        self.status.setStyleSheet("color: gray;")
+
+    def _refresh_i0_label(self) -> None:
+        I0 = self.moku_panel.I0
+        if I0 is None:
+            self.i0_label.setText("I0 = niet ingesteld")
+            self.i0_label.setStyleSheet("color: gray;")
         else:
-            self._stop_recording()
+            self.i0_label.setText(f"I0 = {I0:.4f} V  (burst → dz1 in mm)")
+            self.i0_label.setStyleSheet("color: #1e8449; font-weight: bold;")
 
-    def _start_recording(self) -> None:
-        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        name = (self.name_input.text() or "scan").strip().replace(" ", "_")
-        self._run_dir = DATA_ROOT / f"{ts}_{name}"
-        self._run_dir.mkdir(parents=True, exist_ok=True)
+    # ---- Burst ----
 
-        csv_path = self._run_dir / "measurement.csv"
-        self._file = open(csv_path, "w", newline="", encoding="utf-8")
-        self._writer = csv.writer(self._file, delimiter=";")
-        self._writer.writerow(CSV_HEADER)
-        self._file.flush()
+    def _take_burst(self) -> None:
+        if self.moku_panel.thread is None or not self.moku_panel.thread.isRunning():
+            self.status.setText("Moku niet verbonden — verbind eerst MokuPanel.")
+            self.status.setStyleSheet("color: red;")
+            return
 
-        meta = self._run_dir / "metadata.txt"
-        meta.write_text(self._build_metadata(start=True), encoding="utf-8")
+        fs_hz = self.fs_khz.value() * 1000
+        T = self.T_ms.value() / 1000.0
 
-        self._t_start = time.monotonic()
-        self._n_rows = 0
-        self.record_btn.setText("■ Stop")
-        self.open_btn.setEnabled(True)
-        self._tick.start()
-        self.status.setText(f"Opname loopt -> {csv_path}")
-        self.status.setStyleSheet("color: #c0392b; font-weight: bold;")
+        self.record_btn.setEnabled(False)
+        self.status.setText("Burst-mode openen (instrument-switch ~3-5s)…")
+        self.status.setStyleSheet("color: #b8860b;")
+        QApplication.processEvents()
 
-    def _stop_recording(self) -> None:
-        self._tick.stop()
-        if self._file is not None:
+        samples: np.ndarray | None = None
+        try:
+            self.moku_panel.start_burst_mode()
+            self.status.setText(
+                f"Burst loopt — {fs_hz/1000:.0f} kSa/s × {self.T_ms.value()} ms…"
+            )
+            QApplication.processEvents()
+            samples = self.moku_panel.acquire_burst(fs_hz, T)
+        except Exception as e:
+            self.status.setText(f"Burst-fout: {e}")
+            self.status.setStyleSheet("color: red;")
+        finally:
             try:
-                self._file.flush()
-                self._file.close()
+                self.moku_panel.end_burst_mode()
             except Exception:
                 pass
-            if self._run_dir is not None:
-                meta = self._run_dir / "metadata.txt"
-                try:
-                    with meta.open("a", encoding="utf-8") as f:
-                        f.write(self._build_metadata(start=False))
-                except Exception:
-                    pass
-        self._file = None
-        self._writer = None
-        self.record_btn.setText("● Record")
-        self.status.setText(f"Opname gestopt — {self._n_rows} rijen.")
-        self.status.setStyleSheet("color: gray;")
-        self._refresh_runs()
 
-    # ---- per-frame schrijven --------------------------------------
-
-    def _on_frame(self, t, values) -> None:
-        if self._writer is None:
+        if samples is None:
+            self.record_btn.setEnabled(True)
             return
+
         try:
-            arr = np.asarray(values, dtype=float)
-            if arr.size == 0:
-                return
-            v_min = float(np.min(arr))
-            v_max = float(np.max(arr))
-            steps = [self.motor_panel.targets[i] for i in range(3)]
-            mms = [steps[i] * self.motor_panel.mm_per_step(i) for i in range(3)]
-            row = [
-                datetime.now().isoformat(timespec="milliseconds"),
-                _fmt(time.monotonic() - self._t_start),
-                steps[0], steps[1], steps[2],
-                _fmt(mms[0]), _fmt(mms[1]), _fmt(mms[2]),
-                self.lamp_panel.slider.value(),
-                _fmt(float(np.mean(arr))),
-                _fmt(v_min),
-                _fmt(v_max),
-                _fmt(float(np.std(arr))),
-                _fmt(v_max - v_min),
-                arr.size,
-            ]
-            self._writer.writerow(row)
-            self._n_rows += 1
+            run_dir = self._save_burst(samples, fs_hz)
         except Exception as e:
+            self.record_btn.setEnabled(True)
             self.status.setText(f"Schrijf-fout: {e}")
             self.status.setStyleSheet("color: red;")
-
-    # ---- status / housekeeping ------------------------------------
-
-    def _refresh_status(self) -> None:
-        if self._writer is None:
             return
-        elapsed = time.monotonic() - self._t_start
+
+        unit = "mm" if self.moku_panel.I0 else "V"
+        mean = float(np.mean(samples))
+        pp = float(np.max(samples) - np.min(samples))
+        std = float(np.std(samples))
+        self._run_dir = run_dir
+        self.open_btn.setEnabled(True)
         self.status.setText(
-            f"Opname loopt — {self._n_rows} rijen, {elapsed:.1f}s"
+            f"✓ {samples.size} samples opgeslagen → {run_dir.name}\n"
+            f"   mean={mean:+.4e} {unit}   pp={pp:.4e} {unit}   std={std:.4e} {unit}"
         )
-        if self._file is not None:
-            try:
-                self._file.flush()
-            except Exception:
-                pass
+        self.status.setStyleSheet("color: #1e8449; font-weight: bold;")
+        self.record_btn.setEnabled(True)
+        self._refresh_runs()
+
+    def _save_burst(self, samples: np.ndarray, fs_hz: int) -> Path:
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        name = (self.name_input.text() or "manual").strip().replace(" ", "_")
+        run_dir = DATA_ROOT / f"manual_{ts}_{name}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        # CSV met NL-locale (; sep, , decimal) — direct Excel-leesbaar.
+        # Twee kolommen: t_s (tijd in seconden) en de meetwaarde (dz1_mm of voltage_V).
+        value_col = "dz1_mm" if self.moku_panel.I0 else "voltage_V"
+        t = np.arange(samples.size, dtype=np.float64) / fs_hz
+        df = pd.DataFrame({"t_s": t, value_col: samples})
+        df.to_csv(run_dir / "burst.csv", sep=";", decimal=",",
+                  index=False, float_format="%.7e")
+
+        mp = self.moku_panel
+        mt = self.motor_panel
+        I0_str = f"{mp.I0:.6f}" if mp.I0 is not None else "not_set"
+        sample_unit = "mm (dz1, dz1_minus tak van A6)" if mp.I0 else "V"
+        meta = (
+            "# Bep-Project manual burst\n"
+            f"timestamp: {datetime.now().isoformat(timespec='seconds')}\n"
+            f"name: {name}\n"
+            f"fs_Hz: {fs_hz}\n"
+            f"T_ms: {self.T_ms.value()}\n"
+            f"n_samples: {samples.size}\n"
+            f"sample_format: csv (t_s, {value_col}), NL-locale (; sep, , decimal)\n"
+            f"sample_unit: {sample_unit}\n"
+            f"I0_V: {I0_str}\n"
+            f"moku_address: {mp.address_input.text()}\n"
+            f"moku_channel: {mp.channel_combo.currentText()}\n"
+            f"moku_range: {mp.range_combo.currentText()}\n"
+            f"moku_coupling: {mp.coupling_combo.currentText()}\n"
+            f"motor1_steps: {mt.targets[0]}\n"
+            f"motor2_steps: {mt.targets[1]}\n"
+            f"motor3_steps: {mt.targets[2]}\n"
+            f"motor1_mm: {mt.targets[0] * mt.mm_per_step(0):.6f}\n"
+            f"motor2_mm: {mt.targets[1] * mt.mm_per_step(1):.6f}\n"
+            f"motor3_mm: {mt.targets[2] * mt.mm_per_step(2):.6f}\n"
+            f"lamp: {self.lamp_panel.slider.value()}\n"
+            "\n"
+            "# Statistics\n"
+            f"mean: {float(np.mean(samples)):.6e}\n"
+            f"std: {float(np.std(samples)):.6e}\n"
+            f"min: {float(np.min(samples)):.6e}\n"
+            f"max: {float(np.max(samples)):.6e}\n"
+            f"peak_to_peak: {float(np.max(samples) - np.min(samples)):.6e}\n"
+        )
+        (run_dir / "metadata.txt").write_text(meta, encoding="utf-8")
+        return run_dir
+
+    # ---- Open / runs-lijst ----
 
     def _open_folder(self) -> None:
         if self._run_dir is None or not self._run_dir.exists():
             return
         self._open_path(self._run_dir)
 
-    # ---- recente runs ---------------------------------------------
-
     def _refresh_runs(self) -> None:
-        """Vul de lijst met de 30 meest-recente run-folders uit data/."""
         self.runs_list.clear()
         if not DATA_ROOT.exists():
             return
@@ -227,14 +301,20 @@ class RecordingPanel(QGroupBox):
 
     @staticmethod
     def _format_run_label(path: Path) -> str:
-        """Parse 'YYYY-MM-DD_HH-MM-SS_naam' of 'scan_<...>' tot 'naam — datum tijd'."""
         name = path.name
-        body = name[5:] if name.startswith("scan_") else name
+        prefix = ""
+        if name.startswith("scan_"):
+            body = name[5:]
+            prefix = "scan: "
+        elif name.startswith("manual_"):
+            body = name[7:]
+            prefix = "manual: "
+        else:
+            body = name
         parts = body.split("_", 2)
         if len(parts) >= 3:
             date_part, time_part, run_name = parts
             time_readable = time_part.replace("-", ":")
-            prefix = "scan: " if name.startswith("scan_") else ""
             return f"{prefix}{run_name}   —   {date_part}  {time_readable}"
         return name
 
@@ -252,36 +332,12 @@ class RecordingPanel(QGroupBox):
         else:
             subprocess.Popen(["xdg-open", str(path)])
 
-    # ---- tab-zichtbaarheid hook -----------------------------------
+    # ---- Lifecycle ----
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._refresh_runs()
 
-    def _build_metadata(self, start: bool) -> str:
-        if start:
-            mp = self.moku_panel
-            mt = self.motor_panel
-            return (
-                "# Bep-Project measurement\n"
-                f"start: {datetime.now().isoformat(timespec='seconds')}\n"
-                f"run_name: {self.name_input.text()}\n"
-                f"moku_address: {mp.address_input.text()}\n"
-                f"moku_channel: {mp.channel_combo.currentText()}\n"
-                f"moku_range: {mp.range_combo.currentText()}\n"
-                f"moku_coupling: {mp.coupling_combo.currentText()}\n"
-                f"motor1_mm_per_step: {mt.mm_per_step(0):.6f}\n"
-                f"motor2_mm_per_step: {mt.mm_per_step(1):.6f}\n"
-                f"motor3_mm_per_step: {mt.mm_per_step(2):.6f}\n"
-                f"motor1_start_step: {mt.targets[0]}\n"
-                f"motor2_start_step: {mt.targets[1]}\n"
-                f"motor3_start_step: {mt.targets[2]}\n"
-            )
-        return (
-            f"end: {datetime.now().isoformat(timespec='seconds')}\n"
-            f"row_count: {self._n_rows}\n"
-        )
-
     def close_recording(self) -> None:
-        if self._file is not None:
-            self._stop_recording()
+        # Bursts zijn synchroon — niets persistents om te sluiten bij afsluiten.
+        return None

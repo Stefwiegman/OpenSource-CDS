@@ -1,13 +1,16 @@
-"""Automatische raster-scan voor Bep-Project.
+"""Automatische raster-scan voor Bep-Project — burst-mode voor MEMS vibratie.
 
-Doet wat een gebruiker handmatig zou doen, maar dan systematisch:
-  voor elk (x, y) in het raster:
-      stuur GOTO -> wacht op stilstand (BUSY?) -> settle -> verzamel N Moku-frames
-      -> middel + log een rij -> volgende punt.
+Voor elk raster-punt:
+  GOTO → BUSY?-poll → settle → één Moku Datalogger burst (fs × T samples)
+       → opslaan als raw/point_NNNNN.csv + 1 rij in index.csv → volgend punt.
 
-Optioneel Z-stack: herhaal het 2D-raster op meerdere Z-niveaus.
-
-Schrijft naar data/scan_<datum>_<naam>/measurement.csv  (compatibel met viewer.py).
+Output per scan-run:
+    data/scan_<datum>_<naam>/
+        metadata.txt
+        index.csv                # 1 rij per scan-punt (motor-positie, file-ref)
+        raw/point_00000.csv      # 2 kolommen: t_s, (dz1_mm | voltage_V), NL-locale
+        raw/point_00001.csv
+        ...
 """
 from __future__ import annotations
 
@@ -20,6 +23,7 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
+import pandas as pd
 import yaml
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -43,15 +47,17 @@ DATA_ROOT = Path("data")
 
 POLL_BUSY_MS = 80     # hoe vaak we BUSY? sturen tijdens MOVING
 SETTLE_DEFAULT = 200
-FRAMES_DEFAULT = 5
+FS_DEFAULT_KHZ = 100  # 100 kSa/s → Nyquist 50 kHz, ruim boven MEMS @ 10 kHz
+T_DEFAULT_MS = 500    # 500 ms → FFT-bin 2 Hz, Q meetbaar tot ~5000
 
-CSV_HEADER = [
-    "t_iso", "scan_point", "ix", "iy",
+INDEX_CSV_HEADER = [
+    "t_iso", "i", "ix", "iy",
     "motor1", "motor2", "motor3",
     "motor1_mm", "motor2_mm", "motor3_mm",
     "lamp",
-    "V_mean", "V_min", "V_max", "V_std", "V_pp",
-    "n_frames_averaged", "settle_ms",
+    "fs_Hz", "T_ms", "n_samples",
+    "raw_file",
+    "settle_ms",
 ]
 
 
@@ -66,14 +72,18 @@ class ScanConfig:
     name: str = "scan"
     size_x_mm: float = 5.0
     size_y_mm: float = 5.0
-    points_x: int = 50
-    points_y: int = 50
+    points_x: int = 25
+    points_y: int = 25
     settle_ms: int = SETTLE_DEFAULT
-    frames_per_point: int = FRAMES_DEFAULT
+    fs_khz: int = FS_DEFAULT_KHZ
+    burst_T_ms: int = T_DEFAULT_MS
     snake: bool = True
 
     def total_points(self) -> int:
         return self.points_x * self.points_y
+
+    def samples_per_point(self) -> int:
+        return int(self.fs_khz * 1000 * self.burst_T_ms / 1000)
 
 
 def load_presets() -> List[dict]:
@@ -96,15 +106,18 @@ def save_presets(presets: List[dict]) -> None:
 
 def _default_presets() -> List[dict]:
     return [
-        {"name": "Klein 1×1 mm", "size_x_mm": 1.0, "size_y_mm": 1.0,
-         "points_x": 20, "points_y": 20, "settle_ms": 100,
-         "frames_per_point": 3, "snake": True},
-        {"name": "Middel 5×5 mm", "size_x_mm": 5.0, "size_y_mm": 5.0,
-         "points_x": 50, "points_y": 50, "settle_ms": 200,
-         "frames_per_point": 5, "snake": True},
-        {"name": "Groot 10×10 mm", "size_x_mm": 10.0, "size_y_mm": 10.0,
-         "points_x": 100, "points_y": 100, "settle_ms": 200,
-         "frames_per_point": 5, "snake": True},
+        {"name": "MEMS Verkennend 1×1 mm  (10×10)",
+         "size_x_mm": 1.0, "size_y_mm": 1.0,
+         "points_x": 10, "points_y": 10, "settle_ms": 100,
+         "fs_khz": 100, "burst_T_ms": 200, "snake": True},
+        {"name": "MEMS Standaard 2×2 mm  (25×25)",
+         "size_x_mm": 2.0, "size_y_mm": 2.0,
+         "points_x": 25, "points_y": 25, "settle_ms": 200,
+         "fs_khz": 100, "burst_T_ms": 500, "snake": True},
+        {"name": "MEMS Diep 5×5 mm  (25×25, hoge Q)",
+         "size_x_mm": 5.0, "size_y_mm": 5.0,
+         "points_x": 25, "points_y": 25, "settle_ms": 200,
+         "fs_khz": 250, "burst_T_ms": 1000, "snake": True},
     ]
 
 
@@ -135,7 +148,7 @@ def build_path(cfg: ScanConfig) -> List[tuple[int, int]]:
 class ScanPanel(QGroupBox):
     """UI + state-machine voor automatische scans."""
 
-    scan_started = Signal(str)        # path naar measurement.csv
+    scan_started = Signal(str)        # path naar index.csv
     scan_finished = Signal(str, int)  # path, n_points
 
     def __init__(self, motor_panel, lamp_panel, moku_panel) -> None:
@@ -150,11 +163,10 @@ class ScanPanel(QGroupBox):
         self._origin: tuple[int, int] = (0, 0)
         self._step_x = 0
         self._step_y = 0
-        self._frame_buffer: list[np.ndarray] = []
-        self._frames_needed = 0
         self._csv_file = None
         self._csv_writer = None
         self._run_dir: Path | None = None
+        self._raw_dir: Path | None = None
         self._t0 = 0.0
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(POLL_BUSY_MS)
@@ -165,7 +177,6 @@ class ScanPanel(QGroupBox):
 
         self._build_ui()
         self._refresh_preset_combo()
-        self.moku_panel.frame.connect(self._on_moku_frame)
 
     # ---------- UI bouw ----------
 
@@ -202,17 +213,33 @@ class ScanPanel(QGroupBox):
         layout.addWidget(self.size_y, r, 3)
         r += 1
 
-        # Resolutie (N×N raster) + Frames/punt
+        # Resolutie (N×N raster)
         layout.addWidget(QLabel("Resolutie:"), r, 0)
         self.resolution = QSpinBox()
         self.resolution.setRange(2, 1000)
-        self.resolution.setValue(50)
-        self.resolution.setToolTip("N × N raster (50 = 2500 punten)")
+        self.resolution.setValue(25)
+        self.resolution.setToolTip("N × N raster (25 = 625 punten)")
         layout.addWidget(self.resolution, r, 1)
-        layout.addWidget(QLabel("Frames/punt:"), r, 2)
-        self.frames = QSpinBox(); self.frames.setRange(1, 50)
-        self.frames.setValue(FRAMES_DEFAULT)
-        layout.addWidget(self.frames, r, 3)
+        layout.addWidget(QLabel("Settle (ms):"), r, 2)
+        self.settle_ms = QSpinBox(); self.settle_ms.setRange(0, 5000)
+        self.settle_ms.setSingleStep(50)
+        self.settle_ms.setValue(SETTLE_DEFAULT)
+        layout.addWidget(self.settle_ms, r, 3)
+        r += 1
+
+        # Burst-parameters: sample-rate en duur
+        layout.addWidget(QLabel("Sample-rate (kSa/s):"), r, 0)
+        self.fs_khz = QSpinBox(); self.fs_khz.setRange(1, 1000)
+        self.fs_khz.setSingleStep(10)
+        self.fs_khz.setValue(FS_DEFAULT_KHZ)
+        self.fs_khz.setToolTip("Hoger = hogere maximale frequentie (Nyquist = fs/2)")
+        layout.addWidget(self.fs_khz, r, 1)
+        layout.addWidget(QLabel("Burst (ms):"), r, 2)
+        self.T_ms = QSpinBox(); self.T_ms.setRange(10, 10000)
+        self.T_ms.setSingleStep(50)
+        self.T_ms.setValue(T_DEFAULT_MS)
+        self.T_ms.setToolTip("Langer = fijnere FFT-frequentie-resolutie (1/T)")
+        layout.addWidget(self.T_ms, r, 3)
         r += 1
 
         # Spacer-rij — vult de resterende ruimte tussen form en actie-area
@@ -227,7 +254,8 @@ class ScanPanel(QGroupBox):
         r += 1
 
         # Live-update van schatting
-        for w in (self.size_x, self.size_y, self.resolution, self.frames):
+        for w in (self.size_x, self.size_y, self.resolution,
+                  self.settle_ms, self.fs_khz, self.T_ms):
             w.valueChanged.connect(self._update_estimate)
 
         # Start / Cancel — exact gelijke breedte via QGridLayout-kolommen,
@@ -271,7 +299,8 @@ class ScanPanel(QGroupBox):
 
         # Iets ruimere inputs voor luchtigere uitstraling
         for w in (self.name_input, self.preset_combo, self.save_preset_btn,
-                  self.size_x, self.size_y, self.resolution, self.frames):
+                  self.size_x, self.size_y, self.resolution,
+                  self.settle_ms, self.fs_khz, self.T_ms):
             w.setMinimumHeight(34)
 
         # Initial state
@@ -292,11 +321,13 @@ class ScanPanel(QGroupBox):
         if idx - 1 >= len(presets):
             return
         p = presets[idx - 1]
-        self.size_x.setValue(p.get("size_x_mm", 5.0))
-        self.size_y.setValue(p.get("size_y_mm", 5.0))
+        self.size_x.setValue(p.get("size_x_mm", 2.0))
+        self.size_y.setValue(p.get("size_y_mm", 2.0))
         # Resolutie = points_x (oude presets met aparte points_y nemen we als points_x over)
-        self.resolution.setValue(int(p.get("points_x", 50)))
-        self.frames.setValue(int(p.get("frames_per_point", FRAMES_DEFAULT)))
+        self.resolution.setValue(int(p.get("points_x", 25)))
+        self.settle_ms.setValue(int(p.get("settle_ms", SETTLE_DEFAULT)))
+        self.fs_khz.setValue(int(p.get("fs_khz", FS_DEFAULT_KHZ)))
+        self.T_ms.setValue(int(p.get("burst_T_ms", T_DEFAULT_MS)))
 
     def _save_current_preset(self) -> None:
         name, ok = QInputDialog.getText(self, "Preset opslaan",
@@ -322,20 +353,25 @@ class ScanPanel(QGroupBox):
             size_y_mm=self.size_y.value(),
             points_x=res,
             points_y=res,
-            settle_ms=SETTLE_DEFAULT,
-            frames_per_point=self.frames.value(),
+            settle_ms=self.settle_ms.value(),
+            fs_khz=self.fs_khz.value(),
+            burst_T_ms=self.T_ms.value(),
             snake=True,
         )
 
     def _update_estimate(self) -> None:
         cfg = self._read_config()
         n = cfg.total_points()
-        # Heuristiek: tijd-per-punt ≈ settle + frames/10 (Moku 10fps) + 0.3s motor-beweging
-        per_pt = cfg.settle_ms / 1000.0 + cfg.frames_per_point * 0.1 + 0.3
+        # Heuristiek: settle + burst-T + 0.3s motor + 0.2s overhead per punt
+        per_pt = (cfg.settle_ms + cfg.burst_T_ms) / 1000.0 + 0.5
         total_s = n * per_pt
         mm = int(total_s // 60)
         ss = int(total_s - mm * 60)
-        self.estimate_lbl.setText(f"ETA: ~{mm}m {ss}s   ·   {n} punten")
+        # Schatting disk-grootte: fs × T × 4 bytes (float32) per punt
+        mb = n * cfg.samples_per_point() * 4 / (1024 * 1024)
+        self.estimate_lbl.setText(
+            f"ETA: ~{mm}m {ss}s   ·   {n} punten   ·   ~{mb:.1f} MB"
+        )
 
     # ---------- Pre-flight checks ----------
 
@@ -351,6 +387,11 @@ class ScanPanel(QGroupBox):
                         "in MotorPanel of vul mm/stap-veld in.")
         if self.moku_panel.thread is None or not self.moku_panel.thread.isRunning():
             return "Moku niet verbonden — verbind eerst MokuPanel."
+        if self.moku_panel.I0 is None:
+            return (
+                "I0 niet ingesteld — ga naar de Manual-tab en klik 'Set I0' "
+                "terwijl je de referentie-intensiteit ziet in de live-grafiek."
+            )
         return None
 
     # ---------- Start / cancel ----------
@@ -377,23 +418,29 @@ class ScanPanel(QGroupBox):
         oy = cur[1] - steps_y_total // 2
         self._origin = (ox, oy)
 
-        # CSV openen
+        # Run-dir + raw/ subfolder + index.csv openen
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         safe_name = (cfg.name or "scan").strip().replace(" ", "_")
         self._run_dir = DATA_ROOT / f"scan_{ts}_{safe_name}"
         self._run_dir.mkdir(parents=True, exist_ok=True)
-        csv_path = self._run_dir / "measurement.csv"
+        self._raw_dir = self._run_dir / "raw"
+        self._raw_dir.mkdir(exist_ok=True)
+        csv_path = self._run_dir / "index.csv"
         self._csv_file = open(csv_path, "w", newline="", encoding="utf-8")
         self._csv_writer = csv.writer(self._csv_file, delimiter=";")
-        self._csv_writer.writerow(CSV_HEADER)
+        self._csv_writer.writerow(INDEX_CSV_HEADER)
 
         # Metadata
         meta = self._run_dir / "metadata.txt"
         mp = self.moku_panel
+        fs_hz = cfg.fs_khz * 1000
+        I0_str = f"{mp.I0:.6f}" if mp.I0 is not None else "not_set"
+        sample_unit = "mm (dz1, dz1_minus tak van A6)" if mp.I0 else "V"
         meta.write_text(
-            "# Bep-Project automatische scan\n"
+            "# Bep-Project automatische scan (burst-mode)\n"
             f"start: {datetime.now().isoformat(timespec='seconds')}\n"
             f"name: {cfg.name}\n"
+            f"mode: datalogger_burst_per_point\n"
             f"size_x_mm: {cfg.size_x_mm}\n"
             f"size_y_mm: {cfg.size_y_mm}\n"
             f"points_x: {cfg.points_x}\n"
@@ -401,7 +448,12 @@ class ScanPanel(QGroupBox):
             f"step_x_steps: {self._step_x}\n"
             f"step_y_steps: {self._step_y}\n"
             f"settle_ms: {cfg.settle_ms}\n"
-            f"frames_per_point: {cfg.frames_per_point}\n"
+            f"fs_Hz: {fs_hz}\n"
+            f"burst_T_ms: {cfg.burst_T_ms}\n"
+            f"samples_per_point: {cfg.samples_per_point()}\n"
+            f"sample_format: csv per punt (t_s, value), NL-locale (; sep, , decimal)\n"
+            f"sample_unit: {sample_unit}\n"
+            f"I0_V: {I0_str}\n"
             f"snake: {cfg.snake}\n"
             f"origin_steps: {self._origin}\n"
             f"motor1_mm_per_step: {mmps_x:.6f}\n"
@@ -412,6 +464,19 @@ class ScanPanel(QGroupBox):
             f"moku_coupling: {mp.coupling_combo.currentText()}\n",
             encoding="utf-8",
         )
+
+        # Switch Moku naar Datalogger-mode (eenmalig, live preview pauzeert)
+        try:
+            self.moku_panel.start_burst_mode()
+        except Exception as e:
+            self._csv_file.close()
+            self._csv_file = None
+            self._csv_writer = None
+            QMessageBox.critical(
+                self, "Burst-mode mislukt",
+                f"Kan Moku niet in Datalogger-mode zetten:\n{e}",
+            )
+            return
 
         # Path bouwen
         self._cfg = cfg
@@ -425,7 +490,8 @@ class ScanPanel(QGroupBox):
         self.cancel_btn.setEnabled(True)
         self._set_inputs_enabled(False)
         self.status.setText(
-            f"Scan gestart → {csv_path.name}  ({len(self._path)} punten)"
+            f"Scan gestart → {csv_path.name}  ({len(self._path)} punten, "
+            f"{cfg.samples_per_point()} samples/punt)"
         )
         self.status.setStyleSheet("color: #1e8449; font-weight: bold;")
         self.scan_started.emit(str(csv_path))
@@ -437,7 +503,6 @@ class ScanPanel(QGroupBox):
             return
         self._poll_timer.stop()
         self._settle_timer.stop()
-        self._frame_buffer.clear()
         # Stuur STOP zodat motoren netjes uitlopen
         try:
             if self.motor_panel.serial and self.motor_panel.serial.is_open:
@@ -509,36 +574,43 @@ class ScanPanel(QGroupBox):
         self._settle_timer.start(self._cfg.settle_ms)
 
     def _enter_collecting(self) -> None:
-        self._frame_buffer.clear()
-        self._frames_needed = self._cfg.frames_per_point
+        """Doe één Datalogger-burst voor het huidige punt en ga door."""
+        if self._state == ScanState.IDLE:
+            return  # geannuleerd tijdens settle
         self._state = ScanState.COLLECTING
-        # Wachten op _on_moku_frame; geen timer nodig — zelf-triggerend.
-
-    def _on_moku_frame(self, t, values) -> None:
-        if self._state != ScanState.COLLECTING:
-            return
-        try:
-            arr = np.asarray(values, dtype=float)
-            if arr.size == 0:
-                return
-            self._frame_buffer.append(arr)
-            if len(self._frame_buffer) >= self._frames_needed:
-                self._write_point_row()
-                self._idx += 1
-                self.progress.setValue(self._idx)
-                self._next_point()
-        except Exception as e:
-            self.status.setText(f"Frame-fout: {e}")
-            self._cancel_scan()
-
-    def _write_point_row(self) -> None:
-        if self._csv_writer is None:
-            return
         ix, iy = self._path[self._idx]
-        # Aggregeer alle frames tot 1 sample-set
-        all_samples = np.concatenate(self._frame_buffer)
-        v_min = float(np.min(all_samples))
-        v_max = float(np.max(all_samples))
+        try:
+            fs_hz = self._cfg.fs_khz * 1000
+            T_s = self._cfg.burst_T_ms / 1000.0
+            samples = self.moku_panel.acquire_burst(fs_hz, T_s)
+        except Exception as e:
+            self.status.setText(f"Burst-fout op punt {self._idx}: {e}")
+            self._cancel_scan()
+            return
+
+        try:
+            self._save_point(ix, iy, samples)
+        except Exception as e:
+            self.status.setText(f"Schrijf-fout: {e}")
+            self._cancel_scan()
+            return
+
+        self._idx += 1
+        self.progress.setValue(self._idx)
+        self._next_point()
+
+    def _save_point(self, ix: int, iy: int, samples: np.ndarray) -> None:
+        if self._csv_writer is None or self._raw_dir is None:
+            return
+        raw_file = f"point_{self._idx:05d}.csv"
+        # CSV per punt: t_s + dz1_mm (of voltage_V), NL-locale
+        value_col = "dz1_mm" if self.moku_panel.I0 else "voltage_V"
+        fs_hz = self._cfg.fs_khz * 1000
+        t = np.arange(samples.size, dtype=np.float64) / fs_hz
+        df = pd.DataFrame({"t_s": t, value_col: samples})
+        df.to_csv(self._raw_dir / raw_file, sep=";", decimal=",",
+                  index=False, float_format="%.7e")
+
         steps = list(self.motor_panel.targets)
         mms = [steps[i] * self.motor_panel.mm_per_step(i) for i in range(3)]
         row = [
@@ -548,12 +620,10 @@ class ScanPanel(QGroupBox):
             steps[0], steps[1], steps[2],
             _fmt(mms[0]), _fmt(mms[1]), _fmt(mms[2]),
             self.lamp_panel.slider.value(),
-            _fmt(float(np.mean(all_samples))),
-            _fmt(v_min),
-            _fmt(v_max),
-            _fmt(float(np.std(all_samples))),
-            _fmt(v_max - v_min),
-            len(self._frame_buffer),
+            self._cfg.fs_khz * 1000,
+            self._cfg.burst_T_ms,
+            int(samples.size),
+            raw_file,
             self._cfg.settle_ms,
         ]
         self._csv_writer.writerow(row)
@@ -563,6 +633,11 @@ class ScanPanel(QGroupBox):
     def _finish(self, canceled: bool) -> None:
         self._poll_timer.stop()
         self._settle_timer.stop()
+        # Sluit Moku burst-mode af (herstart live preview)
+        try:
+            self.moku_panel.end_burst_mode()
+        except Exception:
+            pass
         if self._csv_file is not None:
             try:
                 self._csv_file.flush()
@@ -581,11 +656,10 @@ class ScanPanel(QGroupBox):
                         )
                 except Exception:
                     pass
-        path_str = str(self._run_dir / "measurement.csv") if self._run_dir else ""
+        path_str = str(self._run_dir / "index.csv") if self._run_dir else ""
         n = self._idx
         self._csv_file = None
         self._csv_writer = None
-        self._frame_buffer.clear()
         self._state = ScanState.IDLE
         self.start_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
@@ -607,7 +681,8 @@ class ScanPanel(QGroupBox):
     def _set_inputs_enabled(self, enabled: bool) -> None:
         for w in (
             self.name_input, self.preset_combo, self.save_preset_btn,
-            self.size_x, self.size_y, self.resolution, self.frames,
+            self.size_x, self.size_y, self.resolution,
+            self.settle_ms, self.fs_khz, self.T_ms,
         ):
             w.setEnabled(enabled)
 
