@@ -100,6 +100,12 @@ class CameraThread(QThread):
         # Auto-focus/WB aan-by-default — manual override komt in tier 2 UX
         cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
         cap.set(cv2.CAP_PROP_AUTO_WB, 1)
+        # Kleur forceren bij elke start: DirectShow bewaart camera-properties in de
+        # driver tussen sessies. Een eerdere versie zette grayscale via SATURATION=0;
+        # die 0 blijft persistent hangen waardoor het beeld zwart-wit blijft. Hier
+        # zetten we 'm terug op een neutrale kleurwaarde (128, gelijk aan brightness/
+        # contrast-neutraal). De zwart-wit-optie loopt nu volledig via _grayscale.
+        cap.set(cv2.CAP_PROP_SATURATION, 128)
 
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
