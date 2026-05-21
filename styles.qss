@@ -389,6 +389,17 @@ QGroupBox::title {
     color: #e6edf3;
 }
 
+/* Compacte panels (lamp binnen/buiten) — minder verticale ruimte */
+QGroupBox[compact="true"] {
+    margin-top: 10px;
+    padding: 14px 14px 12px 14px;
+}
+
+QGroupBox[compact="true"]::title {
+    top: -1px;
+    padding: 0 6px;
+}
+
 /* In-tab panels: tab-naam dient als titel — verwijder QGroupBox-frame en title-ruimte */
 QGroupBox[inTab="true"] {
     background-color: transparent;

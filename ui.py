@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 
 import cv2
 import numpy as np
@@ -55,6 +56,10 @@ BAUD = 9600
 MAX_STEPS = 4096
 DEFAULT_SPEED = 500   # AccelStepper setMaxSpeed (steps/s)
 MAX_SPEED = 2000
+AXIS_NAMES = ("X", "Y", "Z")   # motor 1 = X-as, motor 2 = Y-as, motor 3 = Z-as
+# Jog-richting per as: +1 = ▲ verhoogt stappen, -1 = ▲ verlaagt stappen.
+# Z is omgedraaid zodat ▲ fysiek omhoog beweegt i.p.v. omlaag.
+AXIS_JOG_DIR = (1, 1, -1)
 
 
 # -------------------- Camera --------------------
@@ -216,7 +221,7 @@ class MotorPanel(QGroupBox):
             row_b = row_a + 1
 
             # Motor-label spant beide rijen (verticaal gecentreerd)
-            motor_lbl = QLabel(f"Motor {i + 1}")
+            motor_lbl = QLabel(f"{AXIS_NAMES[i]}-as")
             layout.addWidget(motor_lbl, row_a, 0, 2, 1, Qt.AlignVCenter)
 
             # ▲ op row_a, ▼ op row_b — eigen object-name voor duidelijke styling
@@ -236,14 +241,14 @@ class MotorPanel(QGroupBox):
 
             # Spinbox spant beide rijen → komt centraal tussen ▲ en ▼ te staan
             spin = QSpinBox()
-            spin.setRange(10, MAX_STEPS)
+            spin.setRange(10, 2_147_483_647)  # geen praktische bovengrens (INT_MAX)
             spin.setSingleStep(10)
             spin.setValue(1000)
             spin.setSuffix(" stappen")
             spin.setFixedWidth(130)
             layout.addWidget(spin, row_a, 2, 2, 1, Qt.AlignVCenter)
 
-            tlbl = QLabel("target: 0")
+            tlbl = QLabel("huidige positie: 0")
             tlbl.setStyleSheet("color: gray;")
             layout.addWidget(tlbl, row_a, 3, 1, 2)
 
@@ -283,14 +288,18 @@ class MotorPanel(QGroupBox):
         self.port_combo.setCurrentText(self.default_port)
 
     def _refresh_target_label(self, i: int) -> None:
-        """Werk target-label bij — toon mm als gekalibreerd."""
-        target = self.targets[i]
+        """Werk positie-label bij — toon mm als gekalibreerd.
+
+        Getoonde positie staat in 'logische' coordinaten (▲ = hoger getal); voor
+        omgedraaide assen (Z) is dat het tegengestelde van de hardware-stappen.
+        """
+        pos = self.targets[i] * AXIS_JOG_DIR[i]
         mm_per_step = self.calibration.motors[i].mm_per_step
         if mm_per_step > 0:
-            mm = target * mm_per_step
-            self.target_labels[i].setText(f"target: {target}  ({mm:+.4f} mm)")
+            mm = pos * mm_per_step
+            self.target_labels[i].setText(f"huidige positie: {pos}  ({mm:+.4f} mm)")
         else:
-            self.target_labels[i].setText(f"target: {target}")
+            self.target_labels[i].setText(f"huidige positie: {pos}")
 
     def _open_serial(self, port: str) -> serial.Serial | None:
         """Open seriële poort met DTR/RTS uit zodat de Nano niet reset."""
@@ -314,21 +323,27 @@ class MotorPanel(QGroupBox):
         """Stuur WHERE en parse de POS-respons. None bij timeout/parse-fout."""
         if not (self.serial and self.serial.is_open):
             return None
+        prev_timeout = self.serial.timeout
         try:
+            # Korte read-timeout zodat een niet-reagerende Nano het verbinden niet
+            # seconden lang blokkeert; we begrenzen het totaal met een deadline.
+            self.serial.timeout = 0.1
             self.serial.reset_input_buffer()
             self.serial.write(b"WHERE\n")
             self.serial.flush()
-            # Lees tot we een POS-regel zien (max ~10 lijnen om READY/OK te skippen)
-            for _ in range(10):
+            deadline = time.monotonic() + 1.0   # max ~1s wachten op POS-respons
+            while time.monotonic() < deadline:
                 line = self.serial.readline().decode("ascii", errors="ignore").strip()
                 if not line:
-                    return None
+                    continue                     # lege read (timeout) → blijf proberen
                 if line.startswith("POS "):
                     parts = line.split()
                     if len(parts) >= 4:
                         return (int(parts[1]), int(parts[2]), int(parts[3]))
         except (serial.SerialException, ValueError):
             return None
+        finally:
+            self.serial.timeout = prev_timeout
         return None
 
     # -----------------------------------------------------------
@@ -426,11 +441,13 @@ class MotorPanel(QGroupBox):
 
     def _jog(self, motor_index: int, direction: int) -> None:
         step_count = self.step_inputs[motor_index].value()
-        self.targets[motor_index] += direction * step_count
+        self.targets[motor_index] += direction * AXIS_JOG_DIR[motor_index] * step_count
         self._refresh_target_label(motor_index)
         target = self.targets[motor_index]
         cmd = f"{motor_index + 1} {target}\n"
-        self._write(cmd, ok_msg=f"Verzonden: {cmd.strip()}")
+        if self._write(cmd, ok_msg=f"Verzonden: {cmd.strip()}"):
+            self.calibration.motors[motor_index].last_position = target
+            cal.save(self.calibration)
 
     def _set_zero(self, motor_index: int) -> None:
         if not (self.serial and self.serial.is_open):
@@ -438,10 +455,11 @@ class MotorPanel(QGroupBox):
             self.status.setStyleSheet("color: red;")
             return
         cmd = f"SETPOS {motor_index + 1} 0\n"
-        if self._write(cmd, ok_msg=f"Motor {motor_index + 1} → 0 (soft-home)"):
+        if self._write(cmd, ok_msg=f"Motor {motor_index + 1} ({AXIS_NAMES[motor_index]}-as) → 0 (soft-home)"):
             self.targets[motor_index] = 0
             self.calibration.motors[motor_index].last_position = 0
             self._refresh_target_label(motor_index)
+            cal.save(self.calibration)
 
     def _stop_all(self) -> None:
         if not (self.serial and self.serial.is_open):
@@ -458,7 +476,7 @@ class MotorPanel(QGroupBox):
             return
         for i, lbl in enumerate(self.target_labels):
             self.targets[i] = 0
-            lbl.setText("target: ? (gestopt)")
+            lbl.setText("huidige positie: ? (gestopt)")
         self.status.setText("STOP verzonden — motoren gestopt op onbekende positie.")
         self.status.setStyleSheet("color: #c0392b; font-weight: bold;")
 
@@ -904,15 +922,19 @@ class TopBar(QWidget):
 
         h.addStretch(1)
 
-        # Actions: Save kalibratie, Help
-        self.save_btn = QPushButton("⚙  Save kalibratie")
-        self.save_btn.setObjectName("TopBarAction")
-        self.save_btn.clicked.connect(self.motor_panel._save_calibration)
-        h.addWidget(self.save_btn)
+        # Actions: Herstel positie, Help
+        self.restore_btn = QPushButton("↺  Herstel positie")
+        self.restore_btn.setObjectName("TopBarAction")
+        self.restore_btn.setToolTip(
+            "Laad de laatste bekende motorpositie uit calibration.yaml\n"
+            "en stuur SETPOS naar de Arduino."
+        )
+        self.restore_btn.clicked.connect(self._restore_positions)
+        h.addWidget(self.restore_btn)
 
         self.help_btn = QPushButton("?")
         self.help_btn.setObjectName("IconButton")
-        self.help_btn.setToolTip("Open RUN_GUIDE.md")
+        self.help_btn.setToolTip("Open README.md")
         self.help_btn.clicked.connect(self._show_help)
         h.addWidget(self.help_btn)
 
@@ -947,16 +969,46 @@ class TopBar(QWidget):
         if not self._camera_seen:
             self.camera_pill.set_state(False, f"USB{CAMERA_INDEX}")
 
-    def _show_help(self) -> None:
-        QMessageBox.information(
-            self, "Help",
-            "Lees docs/RUN_GUIDE.md voor de volledige werkwijze.\n\n"
-            "Tabs:\n"
-            "  • Manual   — handmatige opname per Moku-frame\n"
-            "  • Auto Scan — automatische raster-scan\n"
-            "  • Setup    — motoren verbinden, jog, kalibratie\n\n"
-            "Lamp-slider werkt onafhankelijk van de actieve tab.",
+    def _restore_positions(self) -> None:
+        mp = self.motor_panel
+        if not (mp.serial and mp.serial.is_open):
+            QMessageBox.warning(self, "Niet verbonden",
+                                "Verbind eerst met de Arduino via de Setup-tab.")
+            return
+        # Herlaad altijd van schijf — in-memory kan verouderd zijn
+        mp.calibration = cal.load()
+        if not mp.calibration.any_known_position():
+            QMessageBox.information(self, "Herstel positie",
+                                    "Geen opgeslagen positie gevonden in calibration.yaml.")
+            return
+        expected = tuple(m.last_position for m in mp.calibration.motors)
+        msg = (
+            f"Zet motorposities terug naar de opgeslagen waarden:\n\n"
+            f"  Motor 1 ({AXIS_NAMES[0]}-as): {expected[0]} stappen\n"
+            f"  Motor 2 ({AXIS_NAMES[1]}-as): {expected[1]} stappen\n"
+            f"  Motor 3 ({AXIS_NAMES[2]}-as): {expected[2]} stappen\n\n"
+            "Dit stuurt SETPOS naar de Arduino zonder de motoren te bewegen.\n"
+            "Alleen doen als de motoren fysiek niet zijn verplaatst."
         )
+        reply = QMessageBox.question(self, "Herstel positie?", msg,
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            for i, p in enumerate(expected):
+                mp._write_raw(f"SETPOS {i + 1} {p}\n")
+                mp.targets[i] = p
+                mp._refresh_target_label(i)
+            cal.save(mp.calibration)
+            mp.status.setText("Kalibratie hersteld — posities teruggezet via SETPOS.")
+            mp.status.setStyleSheet("color: green;")
+
+    def _show_help(self) -> None:
+        import os
+        from pathlib import Path
+        readme = Path(__file__).parent / "README.md"
+        if readme.exists():
+            os.startfile(str(readme))
+        else:
+            QMessageBox.information(self, "Help", "README.md niet gevonden.")
 
 
 # -------------------- Camera card (wrapt CameraPanel met titel-rij) --------------------
@@ -1015,7 +1067,16 @@ class MainWindow(QMainWindow):
         # ---- panels (functioneel ongewijzigd) ----
         self.camera_panel = CameraPanel()
         self.motor_panel = MotorPanel()
-        self.lamp_panel = LampPanel(get_serial=lambda: self.motor_panel.serial)
+        self.lamp_panel = LampPanel(
+            get_serial=lambda: self.motor_panel.serial,
+            title="Lamp binnen (WS2812B-8, pin A2)",
+            command="LAMP",
+        )
+        self.lamp_panel_buiten = LampPanel(
+            get_serial=lambda: self.motor_panel.serial,
+            title="Lamp buiten (WS2812B-8, pin A3)",
+            command="LAMP2",
+        )
         self.moku_panel = MokuPanel()
         self.recording_panel = RecordingPanel(
             moku_panel=self.moku_panel,
@@ -1055,27 +1116,30 @@ class MainWindow(QMainWindow):
             panel.style().unpolish(panel)
             panel.style().polish(panel)
 
+        # Camera-tab = instellingen + beide lamp-panelen (de lamp verlicht het
+        # camerabeeld, dus hoort de bediening logisch bij de Camera-tab)
+        camera_tab = QWidget()
+        camera_tab_v = QVBoxLayout(camera_tab)
+        camera_tab_v.setContentsMargins(0, 0, 0, 0)
+        camera_tab_v.setSpacing(12)
+        camera_tab_v.addWidget(self.camera_settings_panel)
+        camera_tab_v.addWidget(self.lamp_panel)
+        camera_tab_v.addWidget(self.lamp_panel_buiten)
+        camera_tab_v.addStretch(1)
+
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.addTab(self.recording_panel, "Manual")
         self.tabs.addTab(self.scan_panel, "Auto Scan")
         self.tabs.addTab(self.motor_panel, "Setup")
-        self.tabs.addTab(self.camera_settings_panel, "Camera")
+        self.tabs.addTab(camera_tab, "Camera")
         self.tabs.setCurrentIndex(2)  # start in Setup om eerst te kunnen verbinden
-
-        # Lamp-paneel hoort alleen bij de Setup-tab
-        SETUP_TAB_INDEX = 2
-        self.tabs.currentChanged.connect(
-            lambda idx: self.lamp_panel.setVisible(idx == SETUP_TAB_INDEX)
-        )
-        self.lamp_panel.setVisible(self.tabs.currentIndex() == SETUP_TAB_INDEX)
 
         sidebar = QWidget()
         sidebar_v = QVBoxLayout(sidebar)
         sidebar_v.setContentsMargins(0, 0, 0, 0)
         sidebar_v.setSpacing(12)
         sidebar_v.addWidget(self.tabs, stretch=1)
-        sidebar_v.addWidget(self.lamp_panel, stretch=0)
 
         # ---- horizontal splitter (camera | sidebar) ----
         h_splitter = QSplitter(Qt.Horizontal)

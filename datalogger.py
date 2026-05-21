@@ -2,24 +2,41 @@
 
 Wordt gebruikt door MokuPanel.acquire_burst() in ui.py. Standalone testbaar:
 
-    from datalogger import MokuDatalogger
-    with MokuDatalogger("192.168.73.1", 1, "10Vpp", "DC", I0=2.5) as dl:
-        dz1_mm = dl.acquire_burst(fs=100_000, duration_s=0.5)
-    print(dz1_mm.shape, dz1_mm.dtype)
+    from datalogger import MokuDatalogger, voltage_to_dz1
+    with MokuDatalogger("192.168.73.1", 1, "10Vpp", "DC") as dl:
+        voltage = dl.acquire_burst(fs=100_000, duration_s=0.5)
+    dz1_mm = voltage_to_dz1(voltage, I0=2.5)   # optioneel: V → verplaatsing
 
 Werkt in streaming-mode: Moku stuurt continu samples over het netwerk, wij
 verzamelen ze in-memory tot de gevraagde duur is bereikt. Voor sample-rates
 boven ~500 kSa/s moet je naar file-mode overstappen (zie .start_logging).
 
 Output:
-    - I0 = None  →  voltage in V (1D float64 array)
-    - I0 > 0     →  verplaatsing dz1 in mm (1D float64 array, dz1_minus tak van A6)
+    acquire_burst() geeft ALTIJD ruwe voltage in V terug (1D float64 array).
+    De omrekening naar verplaatsing dz1 (mm) gebeurt in de schrijf-laag
+    (recording.py / scan.py) via voltage_to_dz1(), zodat de ruwe meetdata
+    altijd bewaard blijft.
 """
 from __future__ import annotations
 
 import time
 
 import numpy as np
+
+
+def voltage_to_dz1(voltage: np.ndarray, I0: float) -> np.ndarray:
+    """Zet fotodetector-spanning (V) om naar verplaatsing dz1 (mm) via formule A6.
+
+    Gebruikt de dz1_minus tak van A6 en klipt op 0 < I_m < I0 zodat de inversie
+    altijd gedefinieerd is (AC-coupling/ruis kan incidenteel buiten de range vallen).
+    """
+    from confocal import compute_q, compute_dz1
+    v = np.asarray(voltage, dtype=np.float64)
+    eps = 1e-9
+    Im = np.clip(v, eps, I0 - eps)
+    q = compute_q()
+    dz1_minus, _ = compute_dz1(Im, q, I0=I0)
+    return dz1_minus
 
 
 class MokuDatalogger:
@@ -106,17 +123,5 @@ class MokuDatalogger:
 
         voltage = np.asarray(samples[:target_n] if target_n else samples,
                              dtype=np.float64)
-
-        if self.I0 is None or self.I0 <= 0:
-            return voltage
-
-        # V → dz1 (mm) via confocale formule A6, dz1_minus tak.
-        # Clippen om de bounds 0 < I_m < I0 hard te garanderen — bij MEMS rond
-        # focus zit V ruim binnen die range, maar AC-coupling of ruis kan
-        # incidenteel buiten vallen.
-        from confocal import compute_q, compute_dz1
-        eps = 1e-9
-        Im = np.clip(voltage, eps, self.I0 - eps)
-        q = compute_q()
-        dz1_minus, _ = compute_dz1(Im, q, I0=self.I0)
-        return dz1_minus
+        # Altijd ruwe voltage — conversie naar dz1 gebeurt in de schrijf-laag.
+        return voltage

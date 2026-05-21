@@ -30,9 +30,16 @@ DEFAULT_BRIGHTNESS = 0
 
 
 class LampPanel(QGroupBox):
-    def __init__(self, get_serial: Callable[[], Optional[serial.Serial]]) -> None:
-        super().__init__("Lamp (WS2812B-8, pin A2/D16)")
+    def __init__(
+        self,
+        get_serial: Callable[[], Optional[serial.Serial]],
+        title: str = "Lamp (WS2812B-8, pin A2/D16)",
+        command: str = "LAMP",
+    ) -> None:
+        super().__init__(title)
+        self.setProperty("compact", True)               # strakkere QSS-padding
         self._get_serial = get_serial
+        self._command = command                          # "LAMP" (binnen) of "LAMP2" (buiten)
         self._last_sent: int = -1                       # forceert eerste send
         self._pending: int = DEFAULT_BRIGHTNESS
         self._previous_on_value: int = 128              # toggle-AAN gebruikt deze
@@ -43,13 +50,14 @@ class LampPanel(QGroupBox):
         self._throttle.timeout.connect(self._flush)
 
         layout = QGridLayout(self)
+        layout.setContentsMargins(0, 2, 0, 0)
+        layout.setVerticalSpacing(8)
+        layout.setHorizontalSpacing(8)
 
         layout.addWidget(QLabel("Helderheid:"), 0, 0)
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(LAMP_MIN, LAMP_MAX)
         self.slider.setValue(DEFAULT_BRIGHTNESS)
-        self.slider.setTickPosition(QSlider.TicksBelow)
-        self.slider.setTickInterval(32)
         self.slider.valueChanged.connect(self._on_slider_change)
         layout.addWidget(self.slider, 0, 1, 1, 2)
 
@@ -63,17 +71,9 @@ class LampPanel(QGroupBox):
 
         self.toggle_btn = QPushButton("AAN")
         self.toggle_btn.setCheckable(True)
+        self.toggle_btn.setFixedHeight(24)
         self.toggle_btn.clicked.connect(self._toggle_on_off)
-        layout.addWidget(self.toggle_btn, 1, 0, 1, 2)
-
-        self.off_btn = QPushButton("UIT")
-        self.off_btn.setToolTip("Forceer lamp direct uit (LAMP 0)")
-        self.off_btn.clicked.connect(self._force_off)
-        layout.addWidget(self.off_btn, 1, 2, 1, 2)
-
-        self.status = QLabel("Niet verbonden (verbind eerst de motoren).")
-        self.status.setProperty("role", "status")
-        layout.addWidget(self.status, 2, 0, 1, 4)
+        layout.addWidget(self.toggle_btn, 1, 0, 1, 4)
 
         layout.setColumnStretch(1, 1)
 
@@ -108,30 +108,15 @@ class LampPanel(QGroupBox):
         else:
             self.slider.setValue(0)
 
-    def _force_off(self) -> None:
-        """Expliciete UIT-knop: stuur direct LAMP 0 zonder throttle."""
-        self.slider.setValue(0)
-        # Bypass throttle voor onmiddellijke respons
-        if self._send(0):
-            self._last_sent = 0
-            self._pending = 0
-            self._throttle.stop()
-
     # ---- serial -----------------------------------------------------
 
     def _send(self, brightness: int) -> bool:
         ser = self._get_serial()
         if ser is None or not ser.is_open:
-            self.status.setText("Niet verbonden (verbind eerst de motoren).")
-            self.status.setStyleSheet("color: red;")
             return False
         try:
-            ser.write(f"LAMP {brightness}\n".encode("ascii"))
+            ser.write(f"{self._command} {brightness}\n".encode("ascii"))
             ser.flush()
-        except serial.SerialException as e:
-            self.status.setText(f"Schrijf-fout: {e}")
-            self.status.setStyleSheet("color: red;")
+        except serial.SerialException:
             return False
-        self.status.setText(f"Helderheid = {brightness} / 255")
-        self.status.setStyleSheet("color: green;")
         return True

@@ -42,8 +42,8 @@ def resolve_unit(df: pd.DataFrame, unit: str) -> str:
 def axis_columns(unit: str) -> tuple[str, str, str, str]:
     """(x_col, y_col, x_label, y_label) voor de gekozen unit."""
     if unit == "mm":
-        return ("motor1_mm", "motor2_mm", "Motor 1 (mm)", "Motor 2 (mm)")
-    return ("motor1", "motor2", "Motor 1 (stappen)", "Motor 2 (stappen)")
+        return ("motor1_mm", "motor2_mm", "X-as (mm)", "Y-as (mm)")
+    return ("motor1", "motor2", "X-as (stappen)", "Y-as (stappen)")
 
 
 def reduce_per_position(df: pd.DataFrame, x_col: str, y_col: str,

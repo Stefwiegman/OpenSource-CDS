@@ -4,7 +4,8 @@ Eén klik op 'Burst' → één Datalogger-burst (fs × T samples) bij de huidige
 motor-positie. Output:
 
     data/manual_<timestamp>_<naam>/
-        burst.csv         # 2 kolommen: t_s en (dz1_mm | voltage_V), NL-locale
+        burst.csv         # ruwe meting: t_s, voltage_V — NL-locale
+        position.csv      # afgeleid: t_s, dz1_mm (alleen met I0 gezet) via A6
         metadata.txt      # Moku-config, I0, motor-positie, statistics
 
 Werkt als snelle handmatige test van de hele pipeline (Moku-frontend →
@@ -82,8 +83,8 @@ class RecordingPanel(QGroupBox):
         self.record_btn.setObjectName("DangerButton")
         self.record_btn.setToolTip(
             "Doe één Datalogger-burst bij de huidige motor-positie.\n"
-            "Met I0 ingesteld: output is verplaatsing (dz1) in mm.\n"
-            "Zonder I0: output is voltage in V."
+            "Vereist een I0-baseline (klik eerst 'Set I0').\n"
+            "Output: burst.csv (ruwe voltage) + position.csv (dz1 in mm)."
         )
         self.record_btn.clicked.connect(self._take_burst)
         layout.addWidget(self.record_btn, 2, 0, 1, 2)
@@ -105,13 +106,13 @@ class RecordingPanel(QGroupBox):
         self.set_i0_btn = QPushButton("Set I0")
         self.set_i0_btn.setToolTip(
             "Snapshot de huidige gemiddelde fotodetector-spanning als I0-baseline.\n"
-            "Daarna wordt V → verplaatsing (dz1, mm) gerekend via confocale formule A6."
+            "Daarna schrijft elke burst ook een position.csv (dz1 in mm) via formule A6."
         )
         self.set_i0_btn.clicked.connect(self._set_I0)
         i0_row.addWidget(self.set_i0_btn)
 
         self.clear_i0_btn = QPushButton("Clear")
-        self.clear_i0_btn.setToolTip("Wis I0 — burst valt terug op voltage-output.")
+        self.clear_i0_btn.setToolTip("Wis I0 — alleen burst.csv (voltage), geen position.csv.")
         self.clear_i0_btn.clicked.connect(self._clear_I0)
         i0_row.addWidget(self.clear_i0_btn)
 
@@ -165,7 +166,7 @@ class RecordingPanel(QGroupBox):
             self.i0_label.setText("I0 = niet ingesteld")
             self.i0_label.setStyleSheet("color: gray;")
         else:
-            self.i0_label.setText(f"I0 = {I0:.4f} V  (burst → dz1 in mm)")
+            self.i0_label.setText(f"I0 = {I0:.4f} V  (+position.csv → dz1 in mm)")
             self.i0_label.setStyleSheet("color: #1e8449; font-weight: bold;")
 
     # ---- Burst ----
@@ -173,6 +174,12 @@ class RecordingPanel(QGroupBox):
     def _take_burst(self) -> None:
         if self.moku_panel.thread is None or not self.moku_panel.thread.isRunning():
             self.status.setText("Moku niet verbonden — verbind eerst MokuPanel.")
+            self.status.setStyleSheet("color: red;")
+            return
+        if not self.moku_panel.I0:
+            self.status.setText(
+                "Stel eerst I0 in (klik 'Set I0') — zonder baseline geen verplaatsing."
+            )
             self.status.setStyleSheet("color: red;")
             return
 
@@ -213,15 +220,16 @@ class RecordingPanel(QGroupBox):
             self.status.setStyleSheet("color: red;")
             return
 
-        unit = "mm" if self.moku_panel.I0 else "V"
         mean = float(np.mean(samples))
         pp = float(np.max(samples) - np.min(samples))
         std = float(np.std(samples))
         self._run_dir = run_dir
         self.open_btn.setEnabled(True)
+        pos_note = ("  +position.csv (dz1 mm)" if getattr(self, "_wrote_position", False)
+                    else "  (geen I0 → geen position.csv)")
         self.status.setText(
-            f"✓ {samples.size} samples opgeslagen → {run_dir.name}\n"
-            f"   mean={mean:+.4e} {unit}   pp={pp:.4e} {unit}   std={std:.4e} {unit}"
+            f"✓ {samples.size} samples → {run_dir.name}{pos_note}\n"
+            f"   mean={mean:+.4e} V   pp={pp:.4e} V   std={std:.4e} V"
         )
         self.status.setStyleSheet("color: #1e8449; font-weight: bold;")
         self.record_btn.setEnabled(True)
@@ -233,27 +241,40 @@ class RecordingPanel(QGroupBox):
         run_dir = DATA_ROOT / f"manual_{ts}_{name}"
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        # CSV met NL-locale (; sep, , decimal) — direct Excel-leesbaar.
-        # Twee kolommen: t_s (tijd in seconden) en de meetwaarde (dz1_mm of voltage_V).
-        value_col = "dz1_mm" if self.moku_panel.I0 else "voltage_V"
+        # burst.csv — ALTIJD ruwe voltage (t_s, voltage_V). NL-locale (; , ).
         t = np.arange(samples.size, dtype=np.float64) / fs_hz
-        df = pd.DataFrame({"t_s": t, value_col: samples})
+        df = pd.DataFrame({"t_s": t, "voltage_V": samples})
         df.to_csv(run_dir / "burst.csv", sep=";", decimal=",",
                   index=False, float_format="%.7e")
+
+        # position.csv — afgeleide verplaatsing dz1 (mm) per row, via formule A6.
+        # Alleen mogelijk met een I0-baseline; anders overslaan.
+        I0 = self.moku_panel.I0
+        wrote_position = False
+        if I0:
+            from datalogger import voltage_to_dz1
+            dz1 = voltage_to_dz1(samples, I0)
+            df_pos = pd.DataFrame({"t_s": t, "dz1_mm": dz1})
+            df_pos.to_csv(run_dir / "position.csv", sep=";", decimal=",",
+                          index=False, float_format="%.7e")
+            wrote_position = True
+        self._wrote_position = wrote_position
 
         mp = self.moku_panel
         mt = self.motor_panel
         I0_str = f"{mp.I0:.6f}" if mp.I0 is not None else "not_set"
-        sample_unit = "mm (dz1, dz1_minus tak van A6)" if mp.I0 else "V"
+        position_note = ("position.csv (t_s, dz1_mm via formule A6)"
+                         if wrote_position else "geen — I0 niet ingesteld")
         meta = (
             "# Bep-Project manual burst\n"
+            "# as-mapping: motor1 = X-as, motor2 = Y-as, motor3 = Z-as (focus)\n"
             f"timestamp: {datetime.now().isoformat(timespec='seconds')}\n"
             f"name: {name}\n"
             f"fs_Hz: {fs_hz}\n"
             f"T_ms: {self.T_ms.value()}\n"
             f"n_samples: {samples.size}\n"
-            f"sample_format: csv (t_s, {value_col}), NL-locale (; sep, , decimal)\n"
-            f"sample_unit: {sample_unit}\n"
+            f"raw_format: burst.csv (t_s, voltage_V), NL-locale (; sep, , decimal)\n"
+            f"position_file: {position_note}\n"
             f"I0_V: {I0_str}\n"
             f"moku_address: {mp.address_input.text()}\n"
             f"moku_channel: {mp.channel_combo.currentText()}\n"

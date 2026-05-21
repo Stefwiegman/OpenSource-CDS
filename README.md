@@ -6,7 +6,7 @@ PySide6-desktopapp voor het aansturen en meten met een confocale verplaatsingsse
 
 | Onderdeel | Details |
 |---|---|
-| Stage | 3× 28BYJ-48 + ULN2003, Arduino Nano (COM4, 9600 baud) |
+| Stage | 3× 28BYJ-48 + ULN2003, Arduino Nano (COM4, 9600 baud). Motor 1 = X-as, motor 2 = Y-as, motor 3 = Z-as (focus) |
 | Lamp | WS2812B-8 ring op pin A2, gedeelde serial-poort |
 | Fotodetector | Moku:Go (Oscilloscope + Datalogger), IP 192.168.73.1 |
 | Camera | USB-webcam index 0, MJPG @ 1080p/30 fps |

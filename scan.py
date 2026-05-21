@@ -26,7 +26,8 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QEvent, QRect, QTimer, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -39,6 +40,8 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSpinBox,
+    QStyle,
+    QStyledItemDelegate,
 )
 
 
@@ -87,14 +90,18 @@ class ScanConfig:
 
 
 def load_presets() -> List[dict]:
+    # Bestand ontbreekt → eerste keer: toon de ingebouwde defaults.
     if not PRESETS_PATH.exists():
         return _default_presets()
     try:
         data = yaml.safe_load(PRESETS_PATH.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError:
         return _default_presets()
-    presets = data.get("presets") or []
-    return presets if presets else _default_presets()
+    presets = data.get("presets")
+    # Sleutel afwezig → defaults. Expliciet lege lijst → respecteer (alles verwijderd).
+    if presets is None:
+        return _default_presets()
+    return presets
 
 
 def save_presets(presets: List[dict]) -> None:
@@ -141,6 +148,31 @@ def build_path(cfg: ScanConfig) -> List[tuple[int, int]]:
         for ix in xs:
             path.append((ix, iy))
     return path
+
+
+# -------------------- Preset-dropdown met verwijder-kruisje --------------------
+
+class _PresetItemDelegate(QStyledItemDelegate):
+    """Tekent een ✕ rechts in elke verwijderbare preset-rij (rij ≥ 1)."""
+
+    HIT_W = 26  # breedte van het klik-gebied voor het kruisje (px)
+
+    def paint(self, painter, option, index) -> None:
+        super().paint(painter, option, index)
+        if index.row() < 1:
+            return  # rij 0 = "(custom)" → niet verwijderbaar
+        rect = option.rect
+        hit = QRect(rect.right() - self.HIT_W, rect.top(), self.HIT_W, rect.height())
+        painter.save()
+        painter.setPen(QColor("#e06c75") if (option.state & QStyle.State_MouseOver)
+                       else QColor("#8a939d"))
+        painter.drawText(hit, Qt.AlignCenter, "✕")
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        size.setHeight(max(size.height(), 28))  # ruimer = makkelijker klikken
+        return size
 
 
 # -------------------- ScanPanel --------------------
@@ -195,19 +227,25 @@ class ScanPanel(QGroupBox):
         # Preset
         layout.addWidget(QLabel("Preset:"), r, 0)
         self.preset_combo = QComboBox()
+        self.preset_combo.setToolTip("Kies een preset. Klik het ✕ in de lijst om te verwijderen.")
         self.preset_combo.activated.connect(self._on_preset_select)
+        # Custom delegate tekent een ✕ per verwijderbare rij; een event-filter op
+        # de viewport vangt de klik erop af (zonder de preset te selecteren).
+        self.preset_combo.setItemDelegate(_PresetItemDelegate(self.preset_combo))
+        self.preset_combo.view().viewport().installEventFilter(self)
         layout.addWidget(self.preset_combo, r, 1, 1, 2)
-        self.save_preset_btn = QPushButton("Opslaan als preset…")
+        self.save_preset_btn = QPushButton("Opslaan…")
+        self.save_preset_btn.setToolTip("Sla de huidige instellingen op als preset")
         self.save_preset_btn.clicked.connect(self._save_current_preset)
         layout.addWidget(self.save_preset_btn, r, 3)
         r += 1
 
-        # Sample-grootte (X | Y)
-        layout.addWidget(QLabel("Grootte X (mm):"), r, 0)
+        # Sample-grootte (X-as | Y-as)
+        layout.addWidget(QLabel("Grootte X-as (mm):"), r, 0)
         self.size_x = QDoubleSpinBox(); self.size_x.setRange(0.001, 100.0)
         self.size_x.setDecimals(3); self.size_x.setValue(5.0)
         layout.addWidget(self.size_x, r, 1)
-        layout.addWidget(QLabel("Grootte Y (mm):"), r, 2)
+        layout.addWidget(QLabel("Grootte Y-as (mm):"), r, 2)
         self.size_y = QDoubleSpinBox(); self.size_y.setRange(0.001, 100.0)
         self.size_y.setDecimals(3); self.size_y.setValue(5.0)
         layout.addWidget(self.size_y, r, 3)
@@ -220,11 +258,7 @@ class ScanPanel(QGroupBox):
         self.resolution.setValue(25)
         self.resolution.setToolTip("N × N raster (25 = 625 punten)")
         layout.addWidget(self.resolution, r, 1)
-        layout.addWidget(QLabel("Settle (ms):"), r, 2)
-        self.settle_ms = QSpinBox(); self.settle_ms.setRange(0, 5000)
-        self.settle_ms.setSingleStep(50)
-        self.settle_ms.setValue(SETTLE_DEFAULT)
-        layout.addWidget(self.settle_ms, r, 3)
+        # Settle-tijd is een vaste waarde (SETTLE_DEFAULT) — geen UI-veld meer.
         r += 1
 
         # Burst-parameters: sample-rate en duur
@@ -242,10 +276,6 @@ class ScanPanel(QGroupBox):
         layout.addWidget(self.T_ms, r, 3)
         r += 1
 
-        # Spacer-rij — vult de resterende ruimte tussen form en actie-area
-        layout.setRowStretch(r, 1)
-        r += 1
-
         # ETA-kaart — eigen rij, prominent gestyled
         self.estimate_lbl = QLabel("—")
         self.estimate_lbl.setObjectName("EtaCard")
@@ -255,7 +285,7 @@ class ScanPanel(QGroupBox):
 
         # Live-update van schatting
         for w in (self.size_x, self.size_y, self.resolution,
-                  self.settle_ms, self.fs_khz, self.T_ms):
+                  self.fs_khz, self.T_ms):
             w.valueChanged.connect(self._update_estimate)
 
         # Start / Cancel — exact gelijke breedte via QGridLayout-kolommen,
@@ -294,13 +324,16 @@ class ScanPanel(QGroupBox):
         layout.addWidget(self.status, r, 0, 1, 4)
         r += 1
 
+        # Spacer onderaan — duwt alles naar boven i.p.v. uitrekken
+        layout.setRowStretch(r, 1)
+
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(3, 1)
 
         # Iets ruimere inputs voor luchtigere uitstraling
         for w in (self.name_input, self.preset_combo, self.save_preset_btn,
                   self.size_x, self.size_y, self.resolution,
-                  self.settle_ms, self.fs_khz, self.T_ms):
+                  self.fs_khz, self.T_ms):
             w.setMinimumHeight(34)
 
         # Initial state
@@ -325,7 +358,7 @@ class ScanPanel(QGroupBox):
         self.size_y.setValue(p.get("size_y_mm", 2.0))
         # Resolutie = points_x (oude presets met aparte points_y nemen we als points_x over)
         self.resolution.setValue(int(p.get("points_x", 25)))
-        self.settle_ms.setValue(int(p.get("settle_ms", SETTLE_DEFAULT)))
+        # settle_ms uit oude presets negeren we — settle is nu een vaste waarde.
         self.fs_khz.setValue(int(p.get("fs_khz", FS_DEFAULT_KHZ)))
         self.T_ms.setValue(int(p.get("burst_T_ms", T_DEFAULT_MS)))
 
@@ -343,6 +376,39 @@ class ScanPanel(QGroupBox):
         self._refresh_preset_combo()
         self.status.setText(f"Preset '{name.strip()}' opgeslagen.")
 
+    def eventFilter(self, obj, event):
+        """Vang klikken op het ✕-kruisje in de preset-dropdown af."""
+        view = self.preset_combo.view()
+        if obj is view.viewport() and event.type() == QEvent.MouseButtonRelease:
+            pos = event.position().toPoint()
+            idx = view.indexAt(pos)
+            if idx.isValid() and idx.row() >= 1:
+                rect = view.visualRect(idx)
+                if pos.x() >= rect.right() - _PresetItemDelegate.HIT_W:
+                    self._delete_preset_at(idx.row())
+                    return True  # klik niet doorgeven → preset wordt niet geselecteerd
+        return super().eventFilter(obj, event)
+
+    def _delete_preset_at(self, row: int) -> None:
+        presets = load_presets()
+        pi = row - 1                       # rij 0 = "(custom)"
+        if pi < 0 or pi >= len(presets):
+            return
+        name = presets[pi].get("name", "(naamloos)")
+        reply = QMessageBox.question(
+            self, "Preset verwijderen?", f"Preset '{name}' verwijderen?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        del presets[pi]
+        save_presets(presets)
+        self.preset_combo.hidePopup()
+        self._refresh_preset_combo()
+        self.preset_combo.setCurrentIndex(0)
+        self.status.setText(f"Preset '{name}' verwijderd.")
+        self.status.setStyleSheet("color: gray;")
+
     # ---------- Config-helpers ----------
 
     def _read_config(self, name: str | None = None) -> ScanConfig:
@@ -353,7 +419,7 @@ class ScanPanel(QGroupBox):
             size_y_mm=self.size_y.value(),
             points_x=res,
             points_y=res,
-            settle_ms=self.settle_ms.value(),
+            settle_ms=SETTLE_DEFAULT,
             fs_khz=self.fs_khz.value(),
             burst_T_ms=self.T_ms.value(),
             snake=True,
@@ -381,9 +447,10 @@ class ScanPanel(QGroupBox):
             return "Scan is al actief."
         if not (self.motor_panel.serial and self.motor_panel.serial.is_open):
             return "Motoren niet verbonden — verbind eerst MotorPanel."
+        axes = ("X", "Y")
         for i in range(2):
             if self.motor_panel.mm_per_step(i) <= 0:
-                return (f"Motor {i+1} heeft mm/stap = 0 — eik eerst "
+                return (f"Motor {i+1} ({axes[i]}-as) heeft mm/stap = 0 — eik eerst "
                         "in MotorPanel of vul mm/stap-veld in.")
         if self.moku_panel.thread is None or not self.moku_panel.thread.isRunning():
             return "Moku niet verbonden — verbind eerst MokuPanel."
@@ -438,6 +505,7 @@ class ScanPanel(QGroupBox):
         sample_unit = "mm (dz1, dz1_minus tak van A6)" if mp.I0 else "V"
         meta.write_text(
             "# Bep-Project automatische scan (burst-mode)\n"
+            "# as-mapping: motor1 = X-as, motor2 = Y-as, motor3 = Z-as (focus)\n"
             f"start: {datetime.now().isoformat(timespec='seconds')}\n"
             f"name: {cfg.name}\n"
             f"mode: datalogger_burst_per_point\n"
@@ -603,11 +671,17 @@ class ScanPanel(QGroupBox):
         if self._csv_writer is None or self._raw_dir is None:
             return
         raw_file = f"point_{self._idx:05d}.csv"
-        # CSV per punt: t_s + dz1_mm (of voltage_V), NL-locale
-        value_col = "dz1_mm" if self.moku_panel.I0 else "voltage_V"
+        # CSV per punt: t_s + dz1_mm (of voltage_V), NL-locale.
+        # samples = ruwe voltage; met I0 rekenen we om naar verplaatsing via A6.
         fs_hz = self._cfg.fs_khz * 1000
         t = np.arange(samples.size, dtype=np.float64) / fs_hz
-        df = pd.DataFrame({"t_s": t, value_col: samples})
+        I0 = self.moku_panel.I0
+        if I0:
+            from datalogger import voltage_to_dz1
+            value_col, values = "dz1_mm", voltage_to_dz1(samples, I0)
+        else:
+            value_col, values = "voltage_V", samples
+        df = pd.DataFrame({"t_s": t, value_col: values})
         df.to_csv(self._raw_dir / raw_file, sep=";", decimal=",",
                   index=False, float_format="%.7e")
 
@@ -682,7 +756,7 @@ class ScanPanel(QGroupBox):
         for w in (
             self.name_input, self.preset_combo, self.save_preset_btn,
             self.size_x, self.size_y, self.resolution,
-            self.settle_ms, self.fs_khz, self.T_ms,
+            self.fs_khz, self.T_ms,
         ):
             w.setEnabled(enabled)
 
