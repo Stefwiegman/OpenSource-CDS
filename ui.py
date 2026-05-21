@@ -1,10 +1,8 @@
 """Geintegreerde UI voor Bep-Project.
 
-- Linksboven: live USB-camera (zelfde capture als camera.py, index 1)
-- Rechtsboven: 3 sliders (0..2048) voor de stepper motors, via COM3 naar de
-  Arduino Nano. Commando-formaat: "p1,p2,p3\\n" (zoals de firmware verwacht).
-- Onder: Moku:Go live fotodetector-plot (zelfde acquisitie-config als
-  moku_live.py, maar embedded i.p.v. eigen window).
+- Linksboven: live USB-camera (CameraThread, index CAMERA_INDEX)
+- Rechtsboven: jog-besturing voor de 3 stepper motors via de Arduino Nano.
+- Onder: Moku:Go live fotodetector-plot (MokuThread, embedded).
 
 Afhankelijkheden:
     pip install PySide6 pyserial opencv-python matplotlib moku
@@ -542,9 +540,8 @@ MOKU_DEFAULT_TIMEBASE = 10e-3   # halve tijdspan in s (toont -T..+T)
 class MokuThread(QThread):
     """Pollt de Moku-oscilloscoop en stuurt frames naar de UI.
 
-    Acquisition-config (frontend, source, timebase) is identiek aan
-    `moku_live.py`, alleen op een ander transport (Qt-signals i.p.v.
-    matplotlib FuncAnimation).
+    Acquisition-config (frontend, source, timebase) loopt over Qt-signals
+    naar de GUI-thread.
     """
 
     data_ready = Signal(object, object)
