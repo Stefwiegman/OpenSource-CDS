@@ -24,18 +24,22 @@ import time
 import numpy as np
 
 
-def voltage_to_dz1(voltage: np.ndarray, I0: float) -> np.ndarray:
+def voltage_to_dz1(voltage: np.ndarray, I0: float,
+                   f1: float | None = None) -> np.ndarray:
     """Zet fotodetector-spanning (V) om naar verplaatsing dz1 (mm) via formule A6.
 
     Gebruikt de dz1_minus tak van A6 en klipt op 0 < I_m < I0 zodat de inversie
     altijd gedefinieerd is (AC-coupling/ruis kan incidenteel buiten de range vallen).
+
+    f1 is de brandpuntsafstand van lens 1 (mm); None → confocal-default.
     """
-    from confocal import compute_q, compute_dz1
+    from confocal import compute_q, compute_dz1, f1 as f1_default
     v = np.asarray(voltage, dtype=np.float64)
     eps = 1e-9
     Im = np.clip(v, eps, I0 - eps)
-    q = compute_q()
-    dz1_minus, _ = compute_dz1(Im, q, I0=I0)
+    f1_val = f1_default if f1 is None else float(f1)
+    q = compute_q(f1=f1_val)
+    dz1_minus, _ = compute_dz1(Im, q, f1=f1_val, I0=I0)
     return dz1_minus
 
 

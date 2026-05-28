@@ -26,6 +26,8 @@ import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
+    QDoubleSpinBox,
     QFrame,
     QGridLayout,
     QGroupBox,
@@ -36,12 +38,74 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSpinBox,
+    QVBoxLayout,
 )
+
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 
 DATA_ROOT = Path("data")
-FS_DEFAULT_KHZ = 100
-T_DEFAULT_MS = 500
+FS_DEFAULT_KHZ = 1000  # 1000 kSa/s = 1 MHz (Moku:Go Datalogger-max) → Nyquist 500 kHz
+T_DEFAULT_MS = 10      # 10 ms → FFT-bin 100 Hz
+F1_DEFAULT_MM = 25.0   # spiegelt confocal.f1 — brandpuntsafstand lens 1 (mm)
+
+
+def amplitude_spectrum(signal: np.ndarray, fs: float) -> tuple[np.ndarray, np.ndarray]:
+    """Eenzijdig amplitudespectrum via Hann-window + reële FFT.
+
+    Retourneert (frequenties_Hz, amplitude). De amplitude is de geschatte
+    sinus-amplitude per frequentiecomponent (window-gecompenseerd, zelfde eenheid
+    als het ingangssignaal). Het DC-gemiddelde wordt eerst verwijderd zodat de
+    0 Hz-piek de trillingsamplitudes niet overstemt.
+    """
+    x = np.asarray(signal, dtype=np.float64)
+    n = x.size
+    if n < 2:
+        return np.zeros(0), np.zeros(0)
+    x = x - np.mean(x)
+    window = np.hanning(n)
+    spectrum = np.fft.rfft(x * window)
+    freqs = np.fft.rfftfreq(n, d=1.0 / fs)
+    amp = np.abs(spectrum) * 2.0 / np.sum(window)
+    return freqs, amp
+
+
+class FFTWindow(QDialog):
+    """Niet-modaal venster met het amplitudespectrum (dz1) van één burst."""
+
+    def __init__(self, freqs: np.ndarray, amp: np.ndarray, title: str,
+                 parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"FFT — {title}")
+        self.resize(760, 440)
+
+        layout = QVBoxLayout(self)
+        fig = Figure(figsize=(7.2, 4.2))
+        self.figure = fig
+        canvas = FigureCanvas(fig)
+        layout.addWidget(canvas)
+
+        ax = fig.add_subplot(111)
+        ax.plot(freqs, amp, lw=1.0, color="#2563eb")
+        ax.set_xlabel("frequentie (Hz)")
+        ax.set_ylabel("amplitude dz1 (µm)")
+        ax.grid(True, alpha=0.3)
+        if freqs.size:
+            ax.set_xlim(0, float(freqs[-1]))
+
+        # Markeer de dominante piek (DC-bin overgeslagen).
+        if amp.size > 1:
+            k = int(np.argmax(amp[1:])) + 1
+            ax.annotate(
+                f"{freqs[k]:.1f} Hz\n{amp[k]:.3g} µm",
+                xy=(freqs[k], amp[k]),
+                xytext=(0.62, 0.82), textcoords="axes fraction",
+                arrowprops=dict(arrowstyle="->", color="#ef4444"),
+            )
+
+        fig.tight_layout()
+        canvas.draw_idle()
 
 
 class RecordingPanel(QGroupBox):
@@ -51,6 +115,7 @@ class RecordingPanel(QGroupBox):
         self.motor_panel = motor_panel
         self.lamp_panel = lamp_panel
         self._run_dir: Path | None = None
+        self._fft_window: FFTWindow | None = None
 
         layout = QGridLayout(self)
 
@@ -100,74 +165,83 @@ class RecordingPanel(QGroupBox):
         self.status.setWordWrap(True)
         layout.addWidget(self.status, 3, 0, 1, 4)
 
-        # ---- I0-calibratie ----
+        # ---- Optica: lens f1 (gaat in formule A6 voor V→dz1) ----
+        f1_row = QHBoxLayout()
+        f1_row.setSpacing(8)
+        f1_row.addWidget(QLabel("Lens f1:"))
+        self.f1_mm = QDoubleSpinBox()
+        self.f1_mm.setRange(1.0, 1000.0)
+        self.f1_mm.setDecimals(2)
+        self.f1_mm.setSingleStep(0.5)
+        self.f1_mm.setValue(F1_DEFAULT_MM)
+        self.f1_mm.setSuffix(" mm")
+        self.f1_mm.setToolTip(
+            "Brandpuntsafstand van lens 1 (f1) in formule A6.\n"
+            "Bepaalt de schaal van de V→verplaatsing (dz1) omrekening."
+        )
+        f1_row.addWidget(self.f1_mm)
+        f1_row.addStretch(1)
+        f1_wrap = QFrame()
+        f1_wrap.setLayout(f1_row)
+        layout.addWidget(f1_wrap, 4, 0, 1, 4)
+
+        # ---- I0-baseline (handmatig invoeren) ----
         i0_row = QHBoxLayout()
         i0_row.setSpacing(8)
-        self.set_i0_btn = QPushButton("Set I0")
-        self.set_i0_btn.setToolTip(
-            "Snapshot de huidige gemiddelde fotodetector-spanning als I0-baseline.\n"
-            "Daarna schrijft elke burst ook een position.csv (dz1 in mm) via formule A6."
+        i0_row.addWidget(QLabel("I0:"))
+        self.i0_input = QDoubleSpinBox()
+        self.i0_input.setRange(0.0, 50.0)
+        self.i0_input.setDecimals(4)
+        self.i0_input.setSingleStep(0.1)
+        self.i0_input.setSuffix(" V")
+        self.i0_input.setSpecialValueText("niet ingesteld")
+        self.i0_input.setToolTip(
+            "Baseline-spanning I0 (volledige reflectie) voor de V→dz1 omrekening.\n"
+            "Vul de gemeten waarde zelf in. 0 = niet ingesteld → alleen burst.csv (voltage)."
         )
-        self.set_i0_btn.clicked.connect(self._set_I0)
-        i0_row.addWidget(self.set_i0_btn)
+        if self.moku_panel.I0:
+            self.i0_input.setValue(float(self.moku_panel.I0))
+        self.i0_input.valueChanged.connect(self._on_i0_changed)
+        i0_row.addWidget(self.i0_input)
 
-        self.clear_i0_btn = QPushButton("Clear")
-        self.clear_i0_btn.setToolTip("Wis I0 — alleen burst.csv (voltage), geen position.csv.")
-        self.clear_i0_btn.clicked.connect(self._clear_I0)
-        i0_row.addWidget(self.clear_i0_btn)
-
-        self.i0_label = QLabel("I0 = niet ingesteld")
+        self.i0_label = QLabel("")
         self.i0_label.setStyleSheet("color: gray;")
         i0_row.addWidget(self.i0_label, stretch=1)
 
         i0_wrap = QFrame()
         i0_wrap.setLayout(i0_row)
-        layout.addWidget(i0_wrap, 4, 0, 1, 4)
+        layout.addWidget(i0_wrap, 5, 0, 1, 4)
+        self._refresh_i0_label()
 
         # ---- Recente runs ----
         runs_lbl = QLabel("Recente runs")
         runs_lbl.setProperty("role", "caption")
-        layout.addWidget(runs_lbl, 5, 0, 1, 4)
+        layout.addWidget(runs_lbl, 6, 0, 1, 4)
 
         self.runs_list = QListWidget()
         self.runs_list.setToolTip("Dubbel-klik om de map te openen")
         self.runs_list.itemDoubleClicked.connect(self._open_run_folder)
-        layout.addWidget(self.runs_list, 6, 0, 1, 4)
+        layout.addWidget(self.runs_list, 7, 0, 1, 4)
 
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(3, 1)
-        layout.setRowStretch(6, 1)
+        layout.setRowStretch(7, 1)
 
         self._refresh_runs()
 
-    # ---- I0-calibratie ----
+    # ---- I0-baseline ----
 
-    def _set_I0(self) -> None:
-        I0 = self.moku_panel.set_I0_from_current()
-        if I0 is None:
-            self.status.setText(
-                "Geen Moku-data — verbind eerst en wacht op een live frame."
-            )
-            self.status.setStyleSheet("color: #b8860b;")
-            return
+    def _on_i0_changed(self, value: float) -> None:
+        self.moku_panel.I0 = value if value > 0.0 else None
         self._refresh_i0_label()
-        self.status.setText(f"I0 ingesteld op {I0:.4f} V.")
-        self.status.setStyleSheet("color: #1e8449;")
-
-    def _clear_I0(self) -> None:
-        self.moku_panel.clear_I0()
-        self._refresh_i0_label()
-        self.status.setText("I0 gewist — burst geeft voltage terug.")
-        self.status.setStyleSheet("color: gray;")
 
     def _refresh_i0_label(self) -> None:
-        I0 = self.moku_panel.I0
-        if I0 is None:
-            self.i0_label.setText("I0 = niet ingesteld")
-            self.i0_label.setStyleSheet("color: gray;")
-        else:
-            self.i0_label.setText(f"I0 = {I0:.4f} V  (+position.csv → dz1 in mm)")
+        if self.moku_panel.I0:
+            self.i0_label.setText("→ position.csv (dz1 in mm)")
             self.i0_label.setStyleSheet("color: #1e8449; font-weight: bold;")
+        else:
+            self.i0_label.setText("geen I0 → alleen voltage")
+            self.i0_label.setStyleSheet("color: gray;")
 
     # ---- Burst ----
 
@@ -234,6 +308,24 @@ class RecordingPanel(QGroupBox):
         self.status.setStyleSheet("color: #1e8449; font-weight: bold;")
         self.record_btn.setEnabled(True)
         self._refresh_runs()
+        self._show_fft(samples, fs_hz, run_dir)
+
+    def _show_fft(self, samples: np.ndarray, fs_hz: int, run_dir: Path) -> None:
+        """Bereken het dz1-amplitudespectrum, sla fft.png op en toon de popup."""
+        from datalogger import voltage_to_dz1
+        dz1_um = voltage_to_dz1(samples, self.moku_panel.I0,
+                                f1=self.f1_mm.value()) * 1000.0   # mm → µm
+        freqs, amp = amplitude_spectrum(dz1_um, fs_hz)
+        if freqs.size == 0:
+            return
+        if self._fft_window is not None:
+            self._fft_window.close()
+        self._fft_window = FFTWindow(freqs, amp, run_dir.name, parent=self)
+        try:
+            self._fft_window.figure.savefig(run_dir / "fft.png", dpi=150)
+        except OSError as e:
+            self.status.setText(f"{self.status.text()}\n   (fft.png niet opgeslagen: {e})")
+        self._fft_window.show()
 
     def _save_burst(self, samples: np.ndarray, fs_hz: int) -> Path:
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -253,7 +345,7 @@ class RecordingPanel(QGroupBox):
         wrote_position = False
         if I0:
             from datalogger import voltage_to_dz1
-            dz1 = voltage_to_dz1(samples, I0)
+            dz1 = voltage_to_dz1(samples, I0, f1=self.f1_mm.value())
             df_pos = pd.DataFrame({"t_s": t, "dz1_mm": dz1})
             df_pos.to_csv(run_dir / "position.csv", sep=";", decimal=",",
                           index=False, float_format="%.7e")
@@ -275,6 +367,7 @@ class RecordingPanel(QGroupBox):
             f"n_samples: {samples.size}\n"
             f"raw_format: burst.csv (t_s, voltage_V), NL-locale (; sep, , decimal)\n"
             f"position_file: {position_note}\n"
+            f"lens_f1_mm: {self.f1_mm.value():.4f}\n"
             f"I0_V: {I0_str}\n"
             f"moku_address: {mp.address_input.text()}\n"
             f"moku_channel: {mp.channel_combo.currentText()}\n"

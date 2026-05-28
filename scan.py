@@ -50,8 +50,8 @@ DATA_ROOT = Path("data")
 
 POLL_BUSY_MS = 80     # hoe vaak we BUSY? sturen tijdens MOVING
 SETTLE_DEFAULT = 200
-FS_DEFAULT_KHZ = 100  # 100 kSa/s → Nyquist 50 kHz, ruim boven MEMS @ 10 kHz
-T_DEFAULT_MS = 500    # 500 ms → FFT-bin 2 Hz, Q meetbaar tot ~5000
+FS_DEFAULT_KHZ = 1000  # 1000 kSa/s = 1 MHz (Moku:Go Datalogger-max) → Nyquist 500 kHz
+T_DEFAULT_MS = 10      # 10 ms → FFT-bin 100 Hz
 
 INDEX_CSV_HEADER = [
     "t_iso", "i", "ix", "iy",
@@ -454,10 +454,10 @@ class ScanPanel(QGroupBox):
                         "in MotorPanel of vul mm/stap-veld in.")
         if self.moku_panel.thread is None or not self.moku_panel.thread.isRunning():
             return "Moku niet verbonden — verbind eerst MokuPanel."
-        if self.moku_panel.I0 is None:
+        if not self.moku_panel.I0:
             return (
-                "I0 niet ingesteld — ga naar de Manual-tab en klik 'Set I0' "
-                "terwijl je de referentie-intensiteit ziet in de live-grafiek."
+                "I0 niet ingesteld — ga naar de Manual-tab en vul de I0-baseline "
+                "(referentie-intensiteit) in."
             )
         return None
 

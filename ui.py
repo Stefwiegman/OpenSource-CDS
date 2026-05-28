@@ -640,8 +640,8 @@ class MokuPanel(QGroupBox):
         self._timebase = MOKU_DEFAULT_TIMEBASE
         self._burst_dl = None
         self._burst_cfg: tuple[str, int, str, str] | None = None
-        self._last_values: object = None  # laatste live-frame, voor Set I0
         self.I0: float | None = None      # baseline-voltage voor V→dz1 conversie
+                                          # (handmatig ingevuld in de Manual-tab)
 
         layout = QVBoxLayout(self)
 
@@ -726,24 +726,10 @@ class MokuPanel(QGroupBox):
 
     def _on_data(self, t, values) -> None:
         self.frame.emit(t, values)
-        self._last_values = values
         self.line.set_data(t, values)
         self.ax.relim()
         self.ax.autoscale_view(scalex=False, scaley=True)
         self.canvas.draw_idle()
-
-    def set_I0_from_current(self) -> float | None:
-        """Snapshot de gemiddelde live-voltage als baseline I0. None als geen data."""
-        if self._last_values is None:
-            return None
-        arr = np.asarray(self._last_values, dtype=float)
-        if arr.size == 0:
-            return None
-        self.I0 = float(np.mean(arr))
-        return self.I0
-
-    def clear_I0(self) -> None:
-        self.I0 = None
 
     def _on_failed(self, msg: str) -> None:
         self.status.setText(msg)
