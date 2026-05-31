@@ -85,7 +85,7 @@ Before the software will do anything useful, make sure you have:
 | **USB webcam** (UVC, ≥1080p) | live view of sample on the camera tab | shows up in your OS's camera app |
 | **Assembled hardware** | otherwise the UI starts but cannot measure | see [3D-print guide](docs/print-guide.md), [wiring guide](docs/wiring.md), and the [assembly video](https://www.youtube.com/watch?v=UzMbLptgHZc) |
 
-Estimated total build cost: <!-- TODO: fill in once BOM has prices -->, see [BOM](docs/bom.md).
+Estimated total build cost: <!-- TODO: fill in once BOM has prices -->, see [BOM](docs/bom.xlsx).
 
 ---
 
