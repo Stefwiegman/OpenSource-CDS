@@ -24,7 +24,7 @@ Everything we made for this project lives behind one of these links.
 |---|---|---|
 | 📄 Research paper | [🚧 TODO](#) <!-- TODO: paste paper URL (Overleaf share / PDF on Drive) --> | Theoretical background, confocal model derivation (appendix A), measurement results, discussion |
 | 🎥 Assembly video | [YouTube](https://www.youtube.com/watch?v=UzMbLptgHZc) | Step-by-step build from printed parts and electronics to a working instrument |
-| 📐 CAD files | [🚧 TODO](#) <!-- TODO: paste Drive / GrabCAD / Onshape URL --> | STEP / STL of every printed and machined part, exploded view, assembly tree |
+| 📐 CAD files | [`cad/`](cad/) | 38 STEP source files for every printed part of the confocal extension, grouped by category (BASE / BLOCKS / CALIBRATION) |
 | 🔧 Wiring guide | [`docs/wiring.md`](docs/wiring.md) | Arduino pin-out, ULN2003 IN2/IN3-swap, power, Moku and camera connections |
 | 🛒 Parts list (BOM) | [`docs/bom.xlsx`](docs/bom.xlsx) | Electronics, optics, mechanical hardware, quantities, suppliers, prices (Excel, download to view) |
 | 🖨️ 3D-print guide | [`docs/print-guide.pdf`](docs/print-guide.pdf) | Printer settings, per-part list with print times, filament estimates, tolerances |
@@ -234,7 +234,7 @@ Every part of our confocal setup is deliberately designed to be straightforward 
 | BOM | ✅ [Published (`docs/bom.xlsx`)](docs/bom.xlsx) |
 | 3D-print guide | ✅ [Published (`docs/print-guide.pdf`)](docs/print-guide.pdf) |
 | Use guide | 🚧 in progress, see [`docs/use-guide.md`](docs/use-guide.md) |
-| CAD release | 🚧 To be packaged + uploaded (under CC BY-SA 4.0) |
+| CAD release | ✅ [Published (`cad/`)](cad/) |
 | Research paper | 🚧 In writing |
 
 ---
