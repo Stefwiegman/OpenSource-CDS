@@ -44,18 +44,24 @@ Under the following terms:
 
 ----------------------------------------------------------------------
 
-DERIVATION NOTICE: UPSTREAM ATTRIBUTION
+UPSTREAM ATTRIBUTION
 
-The 3-axis flexure stage of this project is a derivative work of the
-OpenFlexure Block Stage by the OpenFlexure project, also released under
-CC BY-SA 4.0.
+This project uses the OpenFlexure Block Stage (CC BY-SA 4.0) UNMODIFIED
+as its 3-axis flexure base. Our confocal optical column, stepper
+actuators, electronics housing, and illumination are an extension that
+bolts onto the standard block stage without modifying its parts.
 
   Upstream project page : https://openflexure.org/projects/blockstage/
   Upstream source       : https://gitlab.com/openflexure/openflexure-block-stage
 
-When citing or redistributing the upstream design, please attribute it as:
+Because we use the block stage unmodified, our extension is not strictly
+a "derivative" of the stage's CAD under CC BY-SA 4.0. We nevertheless
+release our extension under the same CC BY-SA 4.0 licence to keep the
+open-hardware chain intact and to match the upstream licence.
 
-  "3-axis flexure stage based on the OpenFlexure Block Stage by the
+When citing or redistributing the upstream design, please attribute as:
+
+  "Confocal extension for the OpenFlexure Block Stage by the
    OpenFlexure project, (c) OpenFlexure, CC BY-SA 4.0."
 
 ----------------------------------------------------------------------

@@ -12,7 +12,7 @@ Submission: **June 12th 2026**.
 
 **Team:** Dafne Gyselinck · Jayden Jhagru · Harmen Klerk · Ties van Lohuizen · Stef Wiegman
 
-> 🧱 **Built on top of the [OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/)** (CC BY-SA 4.0). The 3-axis flexure stage at the base of our instrument is a derivative of their open-hardware design; we added the confocal optical column, stepper actuators, electronics housing and the software. See [Built on top of](#-built-on-top-of) for details and attribution.
+> 🧱 **Built on top of the [OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/)** (CC BY-SA 4.0). We use the block stage **unmodified**: our confocal optics, stepper actuators, electronics housing, and software bolt onto it as a clip-on extension. If you already own an OpenFlexure Block Stage, you only need to print our additional parts. See [Built on top of](#-built-on-top-of) for details and attribution.
 
 ---
 
@@ -38,9 +38,9 @@ Everything we made for this project lives behind one of these links.
 
 A complete, low-cost **confocal displacement measurement instrument**, built from four parts:
 
-- A 3-axis flexure stage derived from the OpenFlexure Block Stage, driven by stepper motors
-- A custom two-lens confocal optical column with a pinhole aperture in front of the photodetector
-- Arduino-based motion control and sample illumination
+- An **unmodified [OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/)** as the 3-axis flexure base
+- Our custom **confocal optical column** (two lenses, pinhole aperture, photodetector) that bolts onto the block stage
+- Our **stepper actuators, electronics, and illumination** that also mount to the unmodified stage
 - A desktop application that ties it all together for live alignment, manual measurements, and automatic raster scans
 
 The instrument **measures sub-micron axial displacement** (vertical position changes smaller than 1 µm) at one point on a sample, then walks the probe over a grid to build a spatial map. At each stand-still point the photodetector records a high-speed voltage burst (a few milliseconds at ≥1 MSa/s); offline FFT analysis turns each burst into a vibration spectrum.
@@ -129,7 +129,7 @@ python ui.py
 
 | Subsystem | Details |
 |---|---|
-| **Stage** | 3× 28BYJ-48 stepper + ULN2003 driver, Arduino Nano (`COM4`, 9600 baud), mounted on a **modified [OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/)** flexure base. Motor 1 = X, motor 2 = Y, motor 3 = Z (focus). |
+| **Stage** | **Unmodified [OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/)** as the flexure base, with our 3× 28BYJ-48 stepper + ULN2003 driver actuators bolted on. Driven by an Arduino Nano (`COM4`, 9600 baud). Motor 1 = X, motor 2 = Y, motor 3 = Z (focus). |
 | **Optical column** | Two-lens confocal path (`f1 = 25 mm`, `f2 = 150 mm`), detector aperture (`r_d = 0.5 mm`), mounted vertically above the stage. Full derivation in the [research paper](#-project-hub), implementation in [`confocal.py`](confocal.py). |
 | **Lamp** | WS2812B-8 LED ring on Arduino pin A2, brightness controlled via shared serial port |
 | **Photodetector** | Moku:Go (Oscilloscope mode for live view, Datalogger mode for burst capture), IP `192.168.73.1` |
@@ -199,20 +199,27 @@ Full theoretical background and derivations: see the [research paper](#-project-
 
 ## 🧱 Built on top of
 
-This instrument's **3-axis flexure stage** is derived from the open-hardware **[OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/)** ([GitLab source](https://gitlab.com/openflexure/openflexure-block-stage)) by the OpenFlexure project. We kept the flexure topology of the base stage and adapted dimensions, motor mounts, and interfaces for our confocal optical column and stepper actuators.
+This instrument uses the open-hardware **[OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/)** ([GitLab source](https://gitlab.com/openflexure/openflexure-block-stage)) by the OpenFlexure project as its 3-axis flexure base. We use the block stage **completely unmodified**: our confocal optical column, stepper actuators, electronics housing, and illumination are designed as a **bolt-on extension** that mounts to the standard block stage without any changes to its parts.
+
+Two practical consequences:
+
+- **If you already own an OpenFlexure Block Stage**, you only need to print our additional confocal-extension parts and bolt them on. No re-print or modification of the stage itself.
+- **The extension is reversible**: unbolt our parts and the block stage returns to its original state and original use cases (microscopy, etc.).
+
+Every part of our confocal setup is deliberately designed to be straightforward to modify for users with non-standard requirements (different optics, sample sizes, illumination, mounting).
 
 | Aspect | Source |
 |---|---|
-| Stage flexure geometry | **OpenFlexure Block Stage** (modified) |
-| Stepper actuators + electronics | Our own design |
-| Optical column (f1, f2, aperture, photodetector) | Our own design |
+| 3-axis flexure stage | **OpenFlexure Block Stage** (used unmodified) |
+| Stepper actuators + electronics | Our own design (mounts to the unmodified stage) |
+| Confocal optical column (f1, f2, aperture, photodetector) | Our own design |
 | Software (UI, firmware, analysis, paper) | Our own work |
 
-**Licensing.** The OpenFlexure Block Stage is licensed under **CC BY-SA 4.0** (Attribution + ShareAlike). Because our CAD is a derivative of theirs, the share-alike clause requires our derivative stage CAD to also be released under **CC BY-SA 4.0**. Our software (this repository) is independent of OpenFlexure's hardware design and can carry a different licence, see [License](#license).
+**Licensing.** The OpenFlexure Block Stage is licensed under **CC BY-SA 4.0** (Attribution + ShareAlike). Because we use it unmodified, our extension parts are technically not a "derivative" of the stage's CAD. We still release our extension under **CC BY-SA 4.0** to keep the open-hardware chain intact and to match the upstream licence. Our software is independent and uses the permissive MIT licence (see [License](#license)).
 
 **Attribution.** When using or referencing this project's hardware:
 
-> *3-axis flexure stage based on the [OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/) by the OpenFlexure project, © OpenFlexure, CC BY-SA 4.0.*
+> *Confocal extension for the [OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/) by the OpenFlexure project, © OpenFlexure, CC BY-SA 4.0.*
 
 ---
 
@@ -255,6 +262,6 @@ This project combines our own software with hardware derived from an open-hardwa
 | **Hardware / CAD** (3D-print files, STEP/STL release) | **CC BY-SA 4.0** | [`LICENSE.hardware`](LICENSE.hardware) |
 | **Documentation** (this README, `docs/*.md`, research paper) | **CC BY-SA 4.0** | [`LICENSE.hardware`](LICENSE.hardware) |
 
-The split exists because the hardware is derived from the [OpenFlexure Block Stage](#-built-on-top-of) (CC BY-SA 4.0); its share-alike clause requires our hardware derivatives and the documentation that travels with them to use the same licence. The software is independent and uses the permissive MIT licence.
+The hardware uses CC BY-SA 4.0 to match the upstream [OpenFlexure Block Stage](#-built-on-top-of) and keep the open-hardware chain intact. Because we use the block stage unmodified and our parts are an attachment rather than a fork, the share-alike clause may not strictly bind us, but we voluntarily match the upstream licence. Documentation travels with hardware so it uses the same licence. The software is independent and uses the permissive MIT licence.
 
 Copyright held jointly by the BEP team (Dafne Gyselinck, Jayden Jhagru, Harmen Klerk, Ties van Lohuizen, Stef Wiegman), 2026.
