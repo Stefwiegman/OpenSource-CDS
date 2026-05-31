@@ -26,26 +26,25 @@ Human-readable summary (not a substitute for the legal code):
 SUMMARY OF YOUR RIGHTS AND OBLIGATIONS
 
 You are free to:
-  - Share   — copy and redistribute the material in any medium or format
-  - Adapt   — remix, transform, and build upon the material for any
-              purpose, even commercially
+  - Share: copy and redistribute the material in any medium or format
+  - Adapt: remix, transform, and build upon the material for any
+    purpose, even commercially
 
 Under the following terms:
-  - Attribution — You must give appropriate credit, provide a link to
-                  the license, and indicate if changes were made. You may
-                  do so in any reasonable manner, but not in any way that
-                  suggests the licensor endorses you or your use.
-  - ShareAlike  — If you remix, transform, or build upon the material,
-                  you must distribute your contributions under the same
-                  licence as the original.
-  - No additional restrictions — You may not apply legal terms or
-                                  technological measures that legally
-                                  restrict others from doing anything the
-                                  licence permits.
+  - Attribution: You must give appropriate credit, provide a link to
+    the license, and indicate if changes were made. You may do so in
+    any reasonable manner, but not in any way that suggests the
+    licensor endorses you or your use.
+  - ShareAlike: If you remix, transform, or build upon the material,
+    you must distribute your contributions under the same licence as
+    the original.
+  - No additional restrictions: You may not apply legal terms or
+    technological measures that legally restrict others from doing
+    anything the licence permits.
 
 ----------------------------------------------------------------------
 
-DERIVATION NOTICE — UPSTREAM ATTRIBUTION
+DERIVATION NOTICE: UPSTREAM ATTRIBUTION
 
 The 3-axis flexure stage of this project is a derivative work of the
 OpenFlexure Block Stage by the OpenFlexure project, also released under
@@ -65,4 +64,4 @@ SOFTWARE SEPARATION
 
 This licence does NOT cover the software in this repository
 (Python source files, Arduino firmware, Qt stylesheets). The software is
-released separately under the MIT licence — see LICENSE.
+released separately under the MIT licence, see LICENSE.

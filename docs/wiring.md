@@ -3,7 +3,7 @@
 > Full pin-out and electrical connection reference for the confocal displacement sensor.
 > Pair with the [BOM](bom.md) for part numbers and the [assembly video](../README.md#-project-hub) for visual reference.
 
-> 🚧 **Status:** Skeleton — diagram and photos to be added.
+> 🚧 **Status:** Skeleton, diagram and photos to be added.
 
 ---
 
@@ -24,27 +24,27 @@
 
 ---
 
-## Pin map — Arduino Nano
+## Pin map for the Arduino Nano
 
 | Function | Pin | Notes |
 |---|---|---|
-| Stepper X — IN1 | D2 | ULN2003 board #1 |
-| Stepper X — IN2 | **D4** | ⚠️ IN2/IN3 are swapped relative to the printed silk on most ULN2003 boards to match `AccelStepper` `FULL4WIRE` coil order |
-| Stepper X — IN3 | **D3** | swapped (see above) |
-| Stepper X — IN4 | D5 | |
-| Stepper Y — IN1 | D6 | ULN2003 board #2 |
-| Stepper Y — IN2 | **D8** | swapped |
-| Stepper Y — IN3 | **D7** | swapped |
-| Stepper Y — IN4 | D9 | |
-| Stepper Z — IN1 | D10 | ULN2003 board #3 |
-| Stepper Z — IN2 | **D12** | swapped |
-| Stepper Z — IN3 | **D11** | swapped |
-| Stepper Z — IN4 | D13 | also drives the on-board LED — fine, ignore the blink |
+| Stepper X IN1 | D2 | ULN2003 board #1 |
+| Stepper X IN2 | **D4** | ⚠️ IN2/IN3 are swapped relative to the printed silk on most ULN2003 boards to match `AccelStepper` `FULL4WIRE` coil order |
+| Stepper X IN3 | **D3** | swapped (see above) |
+| Stepper X IN4 | D5 | |
+| Stepper Y IN1 | D6 | ULN2003 board #2 |
+| Stepper Y IN2 | **D8** | swapped |
+| Stepper Y IN3 | **D7** | swapped |
+| Stepper Y IN4 | D9 | |
+| Stepper Z IN1 | D10 | ULN2003 board #3 |
+| Stepper Z IN2 | **D12** | swapped |
+| Stepper Z IN3 | **D11** | swapped |
+| Stepper Z IN4 | D13 | also drives the on-board LED, fine, ignore the blink |
 | LED ring data | A2 | WS2812B-8, single data line |
 | GND | GND | Common ground for steppers, LEDs, Nano |
-| 5 V (lamp) | 5V | WS2812B-8 power — fine from Nano USB for low brightness, external supply recommended at full brightness |
+| 5 V (lamp) | 5V | WS2812B-8 power, fine from Nano USB for low brightness, external supply recommended at full brightness |
 
-> 💡 The IN2/IN3 swap is intentional and matches the firmware. If your motors hum or twitch but don't rotate, you've probably wired straight-through — swap IN2 and IN3 on each driver.
+> 💡 The IN2/IN3 swap is intentional and matches the firmware. If your motors hum or twitch but don't rotate, you've probably wired straight-through, swap IN2 and IN3 on each driver.
 
 ---
 

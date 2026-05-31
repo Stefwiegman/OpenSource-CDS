@@ -3,7 +3,7 @@
 > **Affordable confocal displacement measurement.**
 > *Confocal Displacements Sensing voor betaalbare verplaatsingsmetingen*
 
-![Confocal Displacement Sensor — CAD render of the assembled instrument](assets/MAIN_ASSEMBLY.png)
+![Confocal Displacement Sensor, CAD render of the assembled instrument](assets/MAIN_ASSEMBLY.png)
 
 ![Status](https://img.shields.io/badge/status-active-success) ![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![UI](https://img.shields.io/badge/UI-PySide6-41cd52) ![Hardware](https://img.shields.io/badge/hardware-Arduino%20Nano%20%2B%20Moku%3AGo-orange) ![Course](https://img.shields.io/badge/TU%20Delft-WBMT3BEP%20%C2%B7%20PME--2026--A06-00a6d6)
 
@@ -26,19 +26,28 @@ Everything we made for this project lives behind one of these links.
 | 🎥 Assembly video | [YouTube](https://www.youtube.com/watch?v=UzMbLptgHZc) | Step-by-step build from printed parts and electronics to a working instrument |
 | 📐 CAD files | [🚧 TODO](#) <!-- TODO: paste Drive / GrabCAD / Onshape URL --> | STEP / STL of every printed and machined part, exploded view, assembly tree |
 | 🔧 Wiring guide | [`docs/wiring.md`](docs/wiring.md) | Arduino pin-out, ULN2003 IN2/IN3-swap, power, Moku and camera connections |
-| 🛒 Parts list (BOM) | [`docs/bom.md`](docs/bom.md) | Electronics, optics, mechanical hardware — quantities, suppliers, prices |
+| 🛒 Parts list (BOM) | [`docs/bom.md`](docs/bom.md) | Electronics, optics, mechanical hardware, quantities, suppliers, prices |
 | 🖨️ 3D-print guide | [`docs/print-guide.md`](docs/print-guide.md) | Printer settings, per-part list with print times, filament estimates, tolerances |
 | 📖 Use guide | [`docs/use-guide.md`](docs/use-guide.md) | First-time setup, calibration, manual burst, automatic scan, analysis, troubleshooting |
-| 🧱 Block stage origin | [openflexure.org/projects/blockstage](https://openflexure.org/projects/blockstage/) | Upstream open-hardware base — required reading before fabrication |
+| 🧱 Block stage origin | [openflexure.org/projects/blockstage](https://openflexure.org/projects/blockstage/) | Upstream open-hardware base, required reading before fabrication |
 | 💻 Source code | this repository | PySide6 desktop UI, Arduino firmware, scan/burst pipeline, confocal physics model |
 
 ---
 
 ## What is this?
 
-A desktop application plus custom hardware that **measures sub-micron axial displacement** (vertical position changes smaller than 1 µm) at one point on a sample, then walks the probe over a grid to build a spatial map. A **confocal** optical path — light is focused both onto the sample and back through a pinhole in front of the photodetector — translates tiny height changes into voltage changes on the detector. A 3-axis stepper stage moves the sample; at each programmed stand-still point the system records a high-speed voltage burst (a few milliseconds at ≥1 MSa/s). The goal is to deliver this capability **at a small fraction of the cost of commercial confocal displacement sensors**.
+A complete, low-cost **confocal displacement measurement instrument**, built from four parts:
 
-A natural application — and our demonstration case — is **vibration-frequency mapping of MEMS devices**: each burst is FFT-analysed to yield the frequency spectrum at that grid point, producing a 3D dataset `(x, y, frequency) → amplitude`.
+- A 3-axis flexure stage derived from the OpenFlexure Block Stage, driven by stepper motors
+- A custom two-lens confocal optical column with a pinhole aperture in front of the photodetector
+- Arduino-based motion control and sample illumination
+- A desktop application that ties it all together for live alignment, manual measurements, and automatic raster scans
+
+The instrument **measures sub-micron axial displacement** (vertical position changes smaller than 1 µm) at one point on a sample, then walks the probe over a grid to build a spatial map. At each stand-still point the photodetector records a high-speed voltage burst (a few milliseconds at ≥1 MSa/s); offline FFT analysis turns each burst into a vibration spectrum.
+
+The goal is to deliver this capability at a small fraction of the cost of commercial confocal displacement sensors, making the technology accessible for academic and small-lab settings.
+
+A natural application, and our demonstration case, is **vibration-frequency mapping of MEMS devices**: each burst's spectrum becomes one point in a 3D dataset `(x, y, frequency) → amplitude`.
 
 ### Glossary
 
@@ -46,13 +55,13 @@ If terms below are new to you, this short table covers the rest of the README:
 
 | Term | What it means here |
 |---|---|
-| **Confocal** | Optical setup where the illumination spot and detector pinhole share a common focus — gives the system its high axial (Z-axis) sensitivity |
+| **Confocal** | Optical setup where the illumination spot and detector pinhole share a common focus, gives the system its high axial (Z-axis) sensitivity |
 | **Burst** | A short (few ms) high-rate sample of photodetector voltage taken at one stand-still position |
 | **dz1** | Axial (Z) displacement of the sample from a reference plane, in mm |
 | **I0** | Photodetector voltage at the reference plane; used to normalise the voltage → displacement conversion |
-| **MEMS** | Micro-Electro-Mechanical Systems — micrometer-scale moving structures whose vibrations we characterise |
+| **MEMS** | Micro-Electro-Mechanical Systems, micrometer-scale moving structures whose vibrations we characterise |
 | **Moku:Go** | Liquid Instruments' multifunction lab instrument; we use its Oscilloscope and Datalogger modes as our photodetector front-end |
-| **Flexure stage** | A stage that moves via elastic flexion of monolithic features instead of sliding bearings — sub-micron repeatable, see OpenFlexure |
+| **Flexure stage** | A stage that moves via elastic flexion of monolithic features instead of sliding bearings, sub-micron repeatable, see OpenFlexure |
 
 ### Pick your starting point
 
@@ -76,7 +85,7 @@ Before the software will do anything useful, make sure you have:
 | **USB webcam** (UVC, ≥1080p) | live view of sample on the camera tab | shows up in your OS's camera app |
 | **Assembled hardware** | otherwise the UI starts but cannot measure | see [3D-print guide](docs/print-guide.md), [wiring guide](docs/wiring.md), and the [assembly video](https://www.youtube.com/watch?v=UzMbLptgHZc) |
 
-Estimated total build cost: <!-- TODO: fill in once BOM has prices --> — see [BOM](docs/bom.md).
+Estimated total build cost: <!-- TODO: fill in once BOM has prices -->, see [BOM](docs/bom.md).
 
 ---
 
@@ -107,7 +116,7 @@ python ui.py
 **First-run checklist:**
 
 1. Flash `arduino/firmware/firmware.ino` to your Arduino Nano (one-time, use the Arduino IDE)
-2. Connect Moku:Go (Ethernet or its Wi-Fi Access Point) — default IP `192.168.73.1`
+2. Connect Moku:Go (Ethernet or its Wi-Fi Access Point), default IP `192.168.73.1`
 3. Plug in the USB webcam
 4. Launch `python ui.py` → open the **Setup** tab → pick your COM-port → click **Connect**
 5. Pills `Motors / Moku / Camera` in the TopBar should all turn green
@@ -138,7 +147,7 @@ Full pin-out, schematic and connector list → [`docs/wiring.md`](docs/wiring.md
 │  Camera feed (● LIVE)        │  Tabs: Manual │ Auto Scan │ Setup │ Camera │
 │                              │  + Lamp panel (Setup tab only)             │
 ├──────────────────────────────┴────────────────────────────────────────────┤
-│  Moku:Go photodetector — live voltage(t) plot                             │
+│  Moku:Go photodetector, live voltage(t) plot                             │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -157,7 +166,7 @@ Step-by-step operating instructions → [`docs/use-guide.md`](docs/use-guide.md)
 
 ## How it works
 
-At every grid point the stage settles to a halt, the Moku:Go records a high-sample-rate voltage burst from the photodetector, and the burst is saved as raw CSV. The confocal optical model converts photodetector voltage to a Z-axis displacement `dz1` using a reference intensity `I0` (set once at the start of a session). After the scan, each burst is FFT-analysed offline to yield the vibration spectrum at that point — the full scan therefore produces a 3D dataset `(x, y, frequency) → amplitude`.
+At every grid point the stage settles to a halt, the Moku:Go records a high-sample-rate voltage burst from the photodetector, and the burst is saved as raw CSV. The confocal optical model converts photodetector voltage to a Z-axis displacement `dz1` using a reference intensity `I0` (set once at the start of a session). After the scan, each burst is FFT-analysed offline to yield the vibration spectrum at that point, the full scan therefore produces a 3D dataset `(x, y, frequency) → amplitude`.
 
 Full theoretical background and derivations: see the [research paper](#-project-hub).
 
@@ -173,12 +182,12 @@ Full theoretical background and derivations: see the [research paper](#-project-
 
 | File | Role |
 |---|---|
-| `ui.py` | Main window — CameraThread, MotorPanel, MokuPanel, TopBar, layout |
+| `ui.py` | Main window, CameraThread, MotorPanel, MokuPanel, TopBar, layout |
 | `scan.py` | Automatic raster scan (burst per grid point, snake path) |
 | `recording.py` | Manual burst (one click = one measurement at current position) |
 | `lamp.py` | WS2812B brightness via slider, throttled @ 20 updates/s |
 | `camera_settings.py` | Exposure / brightness / contrast / black-and-white (Camera tab) |
-| `datalogger.py` | Moku Datalogger wrapper — streaming burst acquisition + V → dz1 conversion |
+| `datalogger.py` | Moku Datalogger wrapper, streaming burst acquisition + V → dz1 conversion |
 | `calibration.py` | Persistence of mm/step + last position → `calibration.yaml` |
 | `confocal.py` | Physics core: formula A6, `compute_q` / `Im` / `dz1` / `Sm` (sympy + numpy) |
 | `gridsearch.py` | Sweep over f1/f2 → measurement-range analysis → CSV (standalone) |
@@ -199,7 +208,7 @@ This instrument's **3-axis flexure stage** is derived from the open-hardware **[
 | Optical column (f1, f2, aperture, photodetector) | Our own design |
 | Software (UI, firmware, analysis, paper) | Our own work |
 
-**Licensing.** The OpenFlexure Block Stage is licensed under **CC BY-SA 4.0** (Attribution + ShareAlike). Because our CAD is a derivative of theirs, the share-alike clause requires our derivative stage CAD to also be released under **CC BY-SA 4.0**. Our software (this repository) is independent of OpenFlexure's hardware design and can carry a different licence — see [License](#license).
+**Licensing.** The OpenFlexure Block Stage is licensed under **CC BY-SA 4.0** (Attribution + ShareAlike). Because our CAD is a derivative of theirs, the share-alike clause requires our derivative stage CAD to also be released under **CC BY-SA 4.0**. Our software (this repository) is independent of OpenFlexure's hardware design and can carry a different licence, see [License](#license).
 
 **Attribution.** When using or referencing this project's hardware:
 
@@ -214,10 +223,10 @@ This instrument's **3-axis flexure stage** is derived from the open-hardware **[
 | Software (this repo) | ✅ Working |
 | Firmware | ✅ Working |
 | Assembly video | ✅ [Published on YouTube](https://www.youtube.com/watch?v=UzMbLptgHZc) |
-| Wiring guide | 🚧 In progress — see [`docs/wiring.md`](docs/wiring.md) |
-| BOM | 🚧 In progress — see [`docs/bom.md`](docs/bom.md) |
-| 3D-print guide | 🚧 In progress — see [`docs/print-guide.md`](docs/print-guide.md) |
-| Use guide | 🚧 In progress — see [`docs/use-guide.md`](docs/use-guide.md) |
+| Wiring guide | 🚧 in progress, see [`docs/wiring.md`](docs/wiring.md) |
+| BOM | 🚧 in progress, see [`docs/bom.md`](docs/bom.md) |
+| 3D-print guide | 🚧 in progress, see [`docs/print-guide.md`](docs/print-guide.md) |
+| Use guide | 🚧 in progress, see [`docs/use-guide.md`](docs/use-guide.md) |
 | CAD release | 🚧 To be packaged + uploaded (under CC BY-SA 4.0) |
 | Research paper | 🚧 In writing |
 
@@ -225,7 +234,7 @@ This instrument's **3-axis flexure stage** is derived from the open-hardware **[
 
 ## Credits
 
-Bachelor End Project — *Precision and Micro-Engineering* track, **TU Delft**, academic year 2025–2026.
+Bachelor End Project for the *Precision and Micro-Engineering* track, **TU Delft**, academic year 2025–2026.
 Course `WBMT3BEP`, project code `PME-2026-A06`.
 
 **Team:** Dafne Gyselinck · Jayden Jhagru · Harmen Klerk · Ties van Lohuizen · Stef Wiegman.

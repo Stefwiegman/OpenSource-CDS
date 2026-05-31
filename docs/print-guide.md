@@ -3,13 +3,13 @@
 > Print settings, part list and assembly notes for the 3D-printed parts of the confocal displacement sensor.
 > Pair with the [CAD files](../README.md#-project-hub), [BOM](bom.md) for non-printed hardware, and the [assembly video](../README.md#-project-hub) for build order.
 
-> 🚧 **Status:** Skeleton — exact part list and tested settings to be filled in.
+> 🚧 **Status:** Skeleton, exact part list and tested settings to be filled in.
 
 ---
 
 ## Recommended print settings
 
-> 🚧 TODO — confirm with what we actually printed.
+> 🚧 TODO: confirm with what we actually printed.
 
 | Setting | Value | Why |
 |---|---|---|
@@ -29,7 +29,7 @@
 
 ## Part list
 
-> 🚧 TODO — fill in once CAD is finalised.
+> 🚧 TODO: fill in once CAD is finalised.
 
 | Part | Qty | File | Print time | Material | Notes |
 |---|---:|---|---:|---|---|
@@ -64,7 +64,7 @@
 
 For full assembly with electronics and optics, see the [assembly video](../README.md#-project-hub).
 
-> 🚧 TODO — short order-of-assembly list once the build is verified.
+> 🚧 TODO: short order-of-assembly list once the build is verified.
 
 1. Print all parts first, dry-fit before glueing anything.
 2. Assemble axes bottom-up: base plate → Z mount → Y mount → X mount → sample carrier.
@@ -75,7 +75,7 @@ For full assembly with electronics and optics, see the [assembly video](../READM
 
 ## Known issues / revisions
 
-> 🚧 TODO — log here when a part is revised, so anyone re-printing knows what version to use.
+> 🚧 TODO: log here when a part is revised, so anyone re-printing knows what version to use.
 
 | Date | Part | Change | Reason |
 |---|---|---|---|

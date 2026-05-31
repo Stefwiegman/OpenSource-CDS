@@ -27,7 +27,7 @@ SOFTWARE.
 
 ----------------------------------------------------------------------
 
-NOTE — This MIT licence covers the SOFTWARE only:
+NOTE: This MIT licence covers the SOFTWARE only:
   - Python source files (*.py)
   - Arduino firmware (arduino/firmware/*.ino)
   - Qt stylesheets, fonts loaded by the application
@@ -35,7 +35,7 @@ NOTE — This MIT licence covers the SOFTWARE only:
 The HARDWARE (3D-printable CAD, STL/STEP files) and DOCUMENTATION
 (README.md, docs/*.md, the research paper) are released under the
 Creative Commons Attribution-ShareAlike 4.0 International licence
-(CC BY-SA 4.0) — see LICENSE.hardware for details.
+(CC BY-SA 4.0), see LICENSE.hardware for details.
 
 This separation exists because the hardware is derived from the
 OpenFlexure Block Stage (CC BY-SA 4.0), whose share-alike clause

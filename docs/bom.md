@@ -3,7 +3,7 @@
 > Everything you need to build one confocal displacement sensor.
 > Pair with the [wiring guide](wiring.md) for connections and the [3D-print guide](print-guide.md) for printed parts.
 
-> 🚧 **Status:** Skeleton — prices and supplier links to be filled in.
+> 🚧 **Status:** Skeleton, prices and supplier links to be filled in.
 
 Last updated: <!-- TODO: date -->
 
@@ -21,13 +21,13 @@ Last updated: <!-- TODO: date -->
 | 1 | USB webcam (UVC, ≥1080p/30 fps) | Visual feedback in UI | <!-- TODO --> | <!-- TODO --> |
 | 1 | Photodetector | <!-- TODO: exact PD model + spec --> | <!-- TODO --> | <!-- TODO --> |
 | 1 | 5 V / 2 A power supply | For LED ring + steppers under load | <!-- TODO --> | <!-- TODO --> |
-| — | Jumper wires, dupont cables | At least 3× 4-way ribbons for the steppers | <!-- TODO --> | <!-- TODO --> |
-| — | USB-B mini cable | Nano ↔ PC | any | low |
-| — | Ethernet cable | Moku:Go ↔ PC | any | low |
+| - | Jumper wires, dupont cables | At least 3× 4-way ribbons for the steppers | <!-- TODO --> | <!-- TODO --> |
+| - | USB-B mini cable | Nano ↔ PC | any | low |
+| - | Ethernet cable | Moku:Go ↔ PC | any | low |
 
 ## Optics
 
-> 🚧 TODO — list lenses, mirrors, beam-splitter, pinhole/aperture, laser/LED source, mounts. Include focal lengths used in the model (`f1 = 25 mm`, `f2 = 150 mm`).
+> 🚧 TODO: list lenses, mirrors, beam-splitter, pinhole/aperture, laser/LED source, mounts. Include focal lengths used in the model (`f1 = 25 mm`, `f2 = 150 mm`).
 
 | Qty | Item | Spec | Supplier | Approx. price |
 |---:|---|---|---|---:|
@@ -42,8 +42,8 @@ Last updated: <!-- TODO: date -->
 
 | Qty | Item | Notes | Supplier | Approx. price |
 |---:|---|---|---|---:|
-| — | M3 / M4 bolts + nuts | <!-- TODO: full hardware list --> | <!-- TODO --> | <!-- TODO --> |
-| — | Linear rails / guides | <!-- TODO: if any --> | <!-- TODO --> | <!-- TODO --> |
+| - | M3 / M4 bolts + nuts | <!-- TODO: full hardware list --> | <!-- TODO --> | <!-- TODO --> |
+| - | Linear rails / guides | <!-- TODO: if any --> | <!-- TODO --> | <!-- TODO --> |
 | 1 | Base plate | <!-- TODO: material, dimensions --> | <!-- TODO --> | <!-- TODO --> |
 
 ## Sample
@@ -56,7 +56,7 @@ Last updated: <!-- TODO: date -->
 
 ## Total estimated cost
 
-> 🚧 TODO — tally once supplier prices are in.
+> 🚧 TODO: tally once supplier prices are in.
 
 ---
 

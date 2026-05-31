@@ -3,13 +3,13 @@
 > How to operate the confocal displacement sensor once it is assembled and connected.
 > If you are building one, start with the [3D-print guide](print-guide.md), [BOM](bom.md) and [wiring guide](wiring.md) first.
 
-> 🚧 **Status:** Skeleton — screenshots and step-by-step procedures to be filled in.
+> 🚧 **Status:** Skeleton, screenshots and step-by-step procedures to be filled in.
 
 ---
 
 ## 1. First-time setup
 
-> 🚧 TODO — fill in once verified end-to-end.
+> 🚧 TODO: fill in once verified end-to-end.
 
 Checklist:
 - [ ] Arduino Nano connected via USB (default `COM4`)
@@ -33,13 +33,13 @@ In the **Setup** tab:
 
 1. Pick the correct COM-port (default `COM4`) and click **Connect**.
 2. The TopBar status pills (`Motors`, `Moku`, `Camera`) should all turn green.
-3. The previous calibration (`calibration.yaml`) is restored automatically. If positions don't match what's stored, the UI shows a restore prompt — confirm if the stage is physically still where you left it, otherwise reject and re-home.
+3. The previous calibration (`calibration.yaml`) is restored automatically. If positions don't match what's stored, the UI shows a restore prompt, confirm if the stage is physically still where you left it, otherwise reject and re-home.
 
 ---
 
 ## 3. Calibrate
 
-> 🚧 TODO — describe the mm-per-step calibration procedure for each axis.
+> 🚧 TODO: describe the mm-per-step calibration procedure for each axis.
 
 In short:
 1. Jog the stage by a known number of steps using the **Setup** tab jog buttons.
@@ -57,10 +57,10 @@ The conversion from photodetector voltage to displacement `dz1` needs a referenc
 
 1. Position the sample so the confocal spot is at the desired reference plane.
 2. Go to the **Manual** tab.
-3. Click **Set I0** — the app averages the current photodetector voltage and stores it.
+3. Click **Set I0**, the app averages the current photodetector voltage and stores it.
 4. Subsequent bursts will be saved with both `voltage_V` and `dz1_mm` columns.
 
-> Without `I0`, bursts still record `voltage_V` — you can compute `dz1` offline later.
+> Without `I0`, bursts still record `voltage_V`, you can compute `dz1` offline later.
 
 ---
 
@@ -102,13 +102,13 @@ data/scan_<timestamp>_<name>/
     └── …
 ```
 
-You can stop a scan at any time — already-recorded points are preserved.
+You can stop a scan at any time, already-recorded points are preserved.
 
 ---
 
 ## 7. Analyse data
 
-> 🚧 TODO — document the FFT / spectrum workflow.
+> 🚧 TODO: document the FFT / spectrum workflow.
 
 - Each `point_NNNNN.csv` is a time-series ready for FFT.
 - Use `viewer.py` (standalone CLI) for a quick 3D plot or heatmap of a scan.
@@ -121,9 +121,9 @@ You can stop a scan at any time — already-recorded points are preserved.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Status pill stays red after Connect | Wrong COM port / Arduino not flashed | Check Device Manager; re-flash `arduino/firmware/firmware.ino` |
-| Motors hum but don't move | IN2/IN3 not swapped on the ULN2003 | See [wiring guide](wiring.md#pin-map--arduino-nano) |
+| Motors hum but don't move | IN2/IN3 not swapped on the ULN2003 | See [wiring guide](wiring.md#pin-map-for-the-arduino-nano) |
 | Moku pill red | Moku:Go on a different subnet | Set PC adapter to `192.168.73.x`; confirm with `ping 192.168.73.1` |
 | Camera black | Another app holds the webcam (Teams, Zoom) | Close it, restart `ui.py` |
 | Position-mismatch prompt on connect | Stage was moved while disconnected | Reject the restore, re-home with **Set 0 here** |
 
-> 🚧 TODO — add more entries as you encounter them.
+> 🚧 TODO: add more entries as you encounter them.
