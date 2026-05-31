@@ -200,7 +200,7 @@ Course `WBMT3BEP`, project code `PME-2026-A06`.
 
 **Supervisor(s):** <!-- TODO: fill in supervisor name(s) + department -->.
 
-Software architecture by Stef Wiegman ([[removed]](https://[removed])).
+Software architecture by Stef Wiegman.
 
 ## License
 
