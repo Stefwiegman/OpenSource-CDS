@@ -1,6 +1,6 @@
 # Use Guide
 
-> How to operate the confocal MEMS vibrometer once it is assembled and connected.
+> How to operate the confocal displacement sensor once it is assembled and connected.
 > If you are building one, start with the [3D-print guide](print-guide.md), [BOM](bom.md) and [wiring guide](wiring.md) first.
 
 > 🚧 **Status:** Skeleton — screenshots and step-by-step procedures to be filled in.

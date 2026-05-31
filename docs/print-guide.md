@@ -1,6 +1,6 @@
 # 3D-Print Guide
 
-> Print settings, part list and assembly notes for the 3D-printed parts of the confocal MEMS vibrometer.
+> Print settings, part list and assembly notes for the 3D-printed parts of the confocal displacement sensor.
 > Pair with the [CAD files](../README.md#-project-hub), [BOM](bom.md) for non-printed hardware, and the [assembly video](../README.md#-project-hub) for build order.
 
 > 🚧 **Status:** Skeleton — exact part list and tested settings to be filled in.

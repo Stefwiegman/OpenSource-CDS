@@ -1,13 +1,25 @@
-# Confocal MEMS Vibrometer
+# Confocal Displacement Sensing
 
-> Spatially-resolved vibration spectroscopy with a custom confocal displacement sensor on a 3-axis stepper stage.
+> **Affordable confocal displacement & velocity measurement.**
+> *Confocal Displacements Sensing voor betaalbare verplaatsing en snelheid metingen*
 
 <!-- TODO: add a hero image — render of the assembled instrument, or a screenshot of the UI mid-scan. Place under assets/hero.png and reference it here: -->
-<!-- ![Confocal MEMS Vibrometer](assets/hero.png) -->
+<!-- ![Confocal Displacement Sensor](assets/hero.png) -->
 
-![Status](https://img.shields.io/badge/status-active-success) ![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![UI](https://img.shields.io/badge/UI-PySide6-41cd52) ![Hardware](https://img.shields.io/badge/hardware-Arduino%20Nano%20%2B%20Moku%3AGo-orange)
+![Status](https://img.shields.io/badge/status-active-success) ![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![UI](https://img.shields.io/badge/UI-PySide6-41cd52) ![Hardware](https://img.shields.io/badge/hardware-Arduino%20Nano%20%2B%20Moku%3AGo-orange) ![Course](https://img.shields.io/badge/TU%20Delft-WBMT3BEP%20%C2%B7%20PME--2026--A06-00a6d6)
 
-A Bachelor End Project (BEP) by **Stef Wiegman** & **[redacted]** — <!-- TODO: institution + academic year, e.g. TU Delft 2025–2026 -->.
+A Bachelor End Project (BEP) for the **Precision and Micro-Engineering** track at TU Delft (course `WBMT3BEP`, project code `PME-2026-A06`).
+Submission: <!-- TODO: confirm date, screenshot showed "March 25th 2026" -->.
+
+**Team:**
+
+| Name | Student no. |
+|---|---|
+| Dafne Gyselinck | REDACTED |
+| Jayden Jhagru | REDACTED |
+| Harmen Klerk | REDACTED |
+| Ties van Lohuizen | REDACTED |
+| Stef Wiegman | REDACTED |
 
 ---
 
@@ -30,7 +42,9 @@ Everything we made for this project lives behind one of these links.
 
 ## What is this?
 
-A desktop application plus custom hardware that **measures vibration frequencies of MEMS devices, spatially resolved across a sample**. A confocal displacement sensor detects sub-micron Z-axis motion at a single point; a 3-axis stepper stage walks the sample through a programmable grid; at each stand-still point the system records a high-speed voltage burst that is later FFT-analysed to yield a frequency-resolved displacement map.
+A desktop application plus custom hardware that **measures sub-micron displacement and velocity** at a single point, and walks the probe over a sample to build a spatial map. A confocal optical path converts axial displacement into a photodetector voltage; a 3-axis stepper stage positions the sample; at each programmed stand-still point the system records a high-speed voltage burst. The goal is to deliver this capability **at a small fraction of the cost of commercial confocal displacement sensors**.
+
+A natural application — and our demonstration case — is **vibration-frequency mapping of MEMS devices**: each burst is FFT-analysed to yield the spectrum at that grid point, producing a 3D dataset `(x, y, frequency) → amplitude`.
 
 ### Pick your starting point
 
@@ -179,7 +193,14 @@ Optical setup parameters: `f1 = 25 mm`, `f2 = 150 mm`, `r0 = 2.75 mm`, `r_d = 0.
 
 ## Credits
 
-Built by **Stef Wiegman** ([[removed]](https://[removed])) and **[redacted]** as a Bachelor End Project — <!-- TODO: institution + supervisor(s) + academic year -->.
+Bachelor End Project — *Precision and Micro-Engineering* track, **TU Delft**, academic year 2025–2026.
+Course `WBMT3BEP`, project code `PME-2026-A06`.
+
+**Team:** Dafne Gyselinck · Jayden Jhagru · Harmen Klerk · Ties van Lohuizen · Stef Wiegman.
+
+**Supervisor(s):** <!-- TODO: fill in supervisor name(s) + department -->.
+
+Software architecture by Stef Wiegman ([[removed]](https://[removed])).
 
 ## License
 

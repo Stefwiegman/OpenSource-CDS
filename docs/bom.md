@@ -1,6 +1,6 @@
 # Bill of Materials (BOM)
 
-> Everything you need to build one confocal MEMS vibrometer.
+> Everything you need to build one confocal displacement sensor.
 > Pair with the [wiring guide](wiring.md) for connections and the [3D-print guide](print-guide.md) for printed parts.
 
 > 🚧 **Status:** Skeleton — prices and supplier links to be filled in.
