@@ -1,7 +1,7 @@
 # Confocal Displacement Sensing
 
-> **Affordable confocal displacement & velocity measurement.**
-> *Confocal Displacements Sensing voor betaalbare verplaatsing en snelheid metingen*
+> **Affordable confocal displacement measurement.**
+> *Confocal Displacements Sensing voor betaalbare verplaatsingsmetingen*
 
 <!-- TODO: add a hero image — render of the assembled instrument, or a screenshot of the UI mid-scan. Place under assets/hero.png and reference it here: -->
 <!-- ![Confocal Displacement Sensor](assets/hero.png) -->
@@ -11,15 +11,7 @@
 A Bachelor End Project (BEP) for the **Precision and Micro-Engineering** track at TU Delft (course `WBMT3BEP`, project code `PME-2026-A06`).
 Submission: <!-- TODO: confirm date, screenshot showed "March 25th 2026" -->.
 
-**Team:**
-
-| Name | Student no. |
-|---|---|
-| Dafne Gyselinck | REDACTED |
-| Jayden Jhagru | REDACTED |
-| Harmen Klerk | REDACTED |
-| Ties van Lohuizen | REDACTED |
-| Stef Wiegman | REDACTED |
+**Team:** Dafne Gyselinck · Jayden Jhagru · Harmen Klerk · Ties van Lohuizen · Stef Wiegman
 
 ---
 
@@ -42,7 +34,7 @@ Everything we made for this project lives behind one of these links.
 
 ## What is this?
 
-A desktop application plus custom hardware that **measures sub-micron displacement and velocity** at a single point, and walks the probe over a sample to build a spatial map. A confocal optical path converts axial displacement into a photodetector voltage; a 3-axis stepper stage positions the sample; at each programmed stand-still point the system records a high-speed voltage burst. The goal is to deliver this capability **at a small fraction of the cost of commercial confocal displacement sensors**.
+A desktop application plus custom hardware that **measures sub-micron axial displacement** at a single point, and walks the probe over a sample to build a spatial map. A confocal optical path converts axial displacement into a photodetector voltage; a 3-axis stepper stage positions the sample; at each programmed stand-still point the system records a high-speed voltage burst. The goal is to deliver this capability **at a small fraction of the cost of commercial confocal displacement sensors**.
 
 A natural application — and our demonstration case — is **vibration-frequency mapping of MEMS devices**: each burst is FFT-analysed to yield the spectrum at that grid point, producing a 3D dataset `(x, y, frequency) → amplitude`.
 
