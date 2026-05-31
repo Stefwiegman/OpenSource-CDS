@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Confocal sensor — only formula A6 and what we derive from it.
 
 Equation A6:

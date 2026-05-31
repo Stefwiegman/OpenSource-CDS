@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Geintegreerde UI voor Bep-Project.
 
 - Linksboven: live USB-camera (CameraThread, index CAMERA_INDEX)

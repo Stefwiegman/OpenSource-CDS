@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Bep-Project firmware voor Arduino Nano
 // Hardware: 3x 28BYJ-48 + ULN2003 + WS2812B-8 (NeoPixel)
 //

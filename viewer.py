@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """3D-viewer voor Bep-Project measurement.csv.
 
 Gebruik:

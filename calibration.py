@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Kalibratie persistentie voor Bep-Project.
 
 Bewaart per motor:

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Camera-instellingen panel — past helderheid/contrast/belichting aan via OpenCV.
 
 OpenCV CAP_PROP_*-constanten worden hardcoded zodat dit bestand cv2 zelf niet hoeft te

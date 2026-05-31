@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Bediening van de WCMCU-2812B-8 (WS2812B, 8 pixels) via de Arduino Nano.
 
 De firmware ontvangt ASCII-commando's:

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Grid search over f1 and f2 for the confocal model in confocal.py.
 
 Sweeps:

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Manual burst-recording voor Bep-Project.
 
 Eén klik op 'Burst' → één Datalogger-burst (fs × T samples) bij de huidige

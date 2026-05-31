@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """MokuDatalogger wrapper voor burst-acquisitie per scan-punt.
 
 Wordt gebruikt door MokuPanel.acquire_burst() in ui.py. Standalone testbaar:

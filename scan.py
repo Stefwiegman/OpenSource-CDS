@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Automatische raster-scan voor Bep-Project — burst-mode voor MEMS vibratie.
 
 Voor elk raster-punt:
