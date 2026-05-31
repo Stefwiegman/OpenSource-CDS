@@ -223,22 +223,6 @@ Every part of our confocal setup is deliberately designed to be straightforward 
 
 ---
 
-## Project status
-
-| Component | State |
-|---|---|
-| Software (this repo) | ✅ Working |
-| Firmware | ✅ Working |
-| Assembly video | ✅ [Published on YouTube](https://www.youtube.com/watch?v=UzMbLptgHZc) |
-| Wiring guide | 🚧 in progress, see [`docs/wiring.md`](docs/wiring.md) |
-| BOM | ✅ [Published (`docs/bom.xlsx`)](docs/bom.xlsx) |
-| 3D-print guide | ✅ [Published (`docs/print-guide.pdf`)](docs/print-guide.pdf) |
-| Use guide | 🚧 in progress, see [`docs/use-guide.md`](docs/use-guide.md) |
-| CAD release | ✅ [Published (`cad/`)](cad/) |
-| Research paper | 🚧 In writing |
-
----
-
 ## Credits
 
 Bachelor End Project for the *Precision and Micro-Engineering* track, **TU Delft**, academic year 2025–2026.
