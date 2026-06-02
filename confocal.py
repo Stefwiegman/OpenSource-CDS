@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 
 
 # --- Default parameters (mm) ---
-f1 = 25.0
+f1 = 40.0
 f2 = 150.0
 r0 = 2.75           # beam radius at lens 1 (r1 in the paper)
 r_d = 0.5          # diaphragm radius (r_diaphragm)
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     q_val = compute_q()
     print(f"q (dz1=0, I_m=0.5*I0): {q_val:.6f} mm")
 
-    dz1 = np.linspace(-0.05, 0.05, 1001)   # ±50 µm in mm
+    dz1 = np.linspace(-5.05, 5.05, 1001)   # ±50 µm in mm
     Im = compute_Im(dz1, q_val)
     Sm = compute_Sm(dz1, q_val)
 
