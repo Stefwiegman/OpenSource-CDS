@@ -25,6 +25,7 @@ from PySide6.QtGui import QFontDatabase, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDoubleSpinBox,
     QFrame,
     QGridLayout,
     QGroupBox,
@@ -46,10 +47,10 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 import calibration as cal
+from calibration_graph import CalibrationGraphPanel
 from camera_settings import CameraSettingsPanel
 from lamp import LampPanel
 from recording import RecordingPanel
-from scan import ScanPanel
 
 
 CAMERA_INDEX = 0
@@ -214,7 +215,7 @@ class MotorPanel(QGroupBox):
         layout.addWidget(self.speed_btn, 1, 4)
 
         # ---- Per motor: 2 rijen (↑ + ↓ in kolom 1, rest naast elkaar) ----
-        self.step_inputs: list[QSpinBox] = []
+        self.jog_inputs: list[QDoubleSpinBox] = []
         self.target_labels: list[QLabel] = []
         self.zero_btns: list[QPushButton] = []
 
@@ -229,24 +230,27 @@ class MotorPanel(QGroupBox):
             # ▲ op row_a, ▼ op row_b — eigen object-name voor duidelijke styling
             up_btn = QPushButton("▲")
             up_btn.setObjectName("JogButton")
-            up_btn.setToolTip("Stappen omhoog")
+            up_btn.setToolTip("Micron omhoog")
             up_btn.setFixedSize(48, 30)
             up_btn.clicked.connect(lambda _c, n=i: self._jog(n, +1))
             layout.addWidget(up_btn, row_a, 1, Qt.AlignVCenter | Qt.AlignHCenter)
 
             down_btn = QPushButton("▼")
             down_btn.setObjectName("JogButton")
-            down_btn.setToolTip("Stappen omlaag")
+            down_btn.setToolTip("Micron omlaag")
             down_btn.setFixedSize(48, 30)
             down_btn.clicked.connect(lambda _c, n=i: self._jog(n, -1))
             layout.addWidget(down_btn, row_b, 1, Qt.AlignVCenter | Qt.AlignHCenter)
 
-            # Spinbox spant beide rijen → komt centraal tussen ▲ en ▼ te staan
-            spin = QSpinBox()
-            spin.setRange(10, 2_147_483_647)  # geen praktische bovengrens (INT_MAX)
-            spin.setSingleStep(10)
-            spin.setValue(1000)
-            spin.setSuffix(" stappen")
+            # Spinbox spant beide rijen → komt centraal tussen ▲ en ▼ te staan.
+            # Invoer in micron; bij jog wordt dit via de kalibratie naar stappen
+            # omgerekend (zie _jog).
+            spin = QDoubleSpinBox()
+            spin.setRange(0.1, 100_000.0)   # µm
+            spin.setDecimals(2)
+            spin.setSingleStep(1.0)
+            spin.setValue(10.0)
+            spin.setSuffix(" µm")
             spin.setFixedWidth(130)
             layout.addWidget(spin, row_a, 2, 2, 1, Qt.AlignVCenter)
 
@@ -261,7 +265,7 @@ class MotorPanel(QGroupBox):
             zero_btn.clicked.connect(lambda _c, n=i: self._set_zero(n))
             layout.addWidget(zero_btn, row_b, 3, 1, 2)
 
-            self.step_inputs.append(spin)
+            self.jog_inputs.append(spin)
             self.target_labels.append(tlbl)
             self.zero_btns.append(zero_btn)
 
@@ -290,7 +294,7 @@ class MotorPanel(QGroupBox):
         self.port_combo.setCurrentText(self.default_port)
 
     def _refresh_target_label(self, i: int) -> None:
-        """Werk positie-label bij — toon mm als gekalibreerd.
+        """Werk positie-label bij — toon micron als gekalibreerd.
 
         Getoonde positie staat in 'logische' coordinaten (▲ = hoger getal); voor
         omgedraaide assen (Z) is dat het tegengestelde van de hardware-stappen.
@@ -298,10 +302,14 @@ class MotorPanel(QGroupBox):
         pos = self.targets[i] * AXIS_JOG_DIR[i]
         mm_per_step = self.calibration.motors[i].mm_per_step
         if mm_per_step > 0:
-            mm = pos * mm_per_step
-            self.target_labels[i].setText(f"huidige positie: {pos}  ({mm:+.4f} mm)")
+            um = pos * mm_per_step * 1000.0
+            self.target_labels[i].setText(
+                f"huidige positie: {um:+.2f} µm  ({pos} stappen)"
+            )
         else:
-            self.target_labels[i].setText(f"huidige positie: {pos}")
+            self.target_labels[i].setText(
+                f"huidige positie: {pos} stappen (niet gekalibreerd)"
+            )
 
     def _open_serial(self, port: str) -> serial.Serial | None:
         """Open seriële poort met DTR/RTS uit zodat de Nano niet reset."""
@@ -442,12 +450,28 @@ class MotorPanel(QGroupBox):
         self._write(cmd, ok_msg=f"Snelheid gezet op {speed} stappen/s.")
 
     def _jog(self, motor_index: int, direction: int) -> None:
-        step_count = self.step_inputs[motor_index].value()
-        self.targets[motor_index] += direction * AXIS_JOG_DIR[motor_index] * step_count
+        um = self.jog_inputs[motor_index].value()
+        mm_per_step = self.calibration.motors[motor_index].mm_per_step
+        if mm_per_step <= 0:
+            self.status.setText(
+                f"{AXIS_NAMES[motor_index]}-as niet gekalibreerd — "
+                "micron-omrekening niet mogelijk."
+            )
+            self.status.setStyleSheet("color: red;")
+            return
+
+        # Micron → stappen via de kalibratie (afronden op hele stappen).
+        um_per_step = mm_per_step * 1000.0
+        steps = round(um / um_per_step)
+        self.targets[motor_index] += direction * AXIS_JOG_DIR[motor_index] * steps
         self._refresh_target_label(motor_index)
         target = self.targets[motor_index]
         cmd = f"{motor_index + 1} {target}\n"
-        if self._write(cmd, ok_msg=f"Verzonden: {cmd.strip()}"):
+        ok = (
+            f"{um:.2f} µm = {steps} stappen → "
+            f"{AXIS_NAMES[motor_index]}-as naar {target}"
+        )
+        if self._write(cmd, ok_msg=ok):
             self.calibration.motors[motor_index].last_position = target
             cal.save(self.calibration)
 
@@ -757,8 +781,8 @@ class MokuPanel(QGroupBox):
 
     # ---------- Burst-mode (Datalogger) ----------
     #
-    # Wordt gebruikt door ScanPanel: één keer start_burst_mode aan begin van
-    # de scan, daarna acquire_burst per punt, end_burst_mode aan het eind.
+    # Wordt gebruikt door RecordingPanel: start_burst_mode vóór de burst,
+    # acquire_burst voor de meting, end_burst_mode erna.
     # Tijdens burst-mode draait de live Oscilloscope-grafiek niet.
 
     def start_burst_mode(self) -> None:
@@ -1071,11 +1095,7 @@ class MainWindow(QMainWindow):
             motor_panel=self.motor_panel,
             lamp_panel=self.lamp_panel,
         )
-        self.scan_panel = ScanPanel(
-            motor_panel=self.motor_panel,
-            lamp_panel=self.lamp_panel,
-            moku_panel=self.moku_panel,
-        )
+        self.calibration_graph_panel = CalibrationGraphPanel()
 
         # ---- camera-thread ----
         self.cam_thread = CameraThread()
@@ -1097,7 +1117,7 @@ class MainWindow(QMainWindow):
 
         # ---- sidebar (rechts) = tabs + altijd-zichtbare lamp ----
         # Onderdruk redundante QGroupBox-titel — de tab-naam volstaat al
-        for panel in (self.recording_panel, self.scan_panel,
+        for panel in (self.recording_panel, self.calibration_graph_panel,
                       self.motor_panel, self.camera_settings_panel):
             panel.setTitle("")
             panel.setProperty("inTab", True)
@@ -1118,7 +1138,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.addTab(self.recording_panel, "Manual")
-        self.tabs.addTab(self.scan_panel, "Auto Scan")
+        self.tabs.addTab(self.calibration_graph_panel, "Calibratiegrafiek")
         self.tabs.addTab(self.motor_panel, "Setup")
         self.tabs.addTab(camera_tab, "Camera")
         self.tabs.setCurrentIndex(2)  # start in Setup om eerst te kunnen verbinden
@@ -1166,7 +1186,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
 
     def closeEvent(self, event) -> None:
-        self.scan_panel.cancel_if_running()
         self.recording_panel.close_recording()
         self.cam_thread.stop()
         self.motor_panel.close_serial()
