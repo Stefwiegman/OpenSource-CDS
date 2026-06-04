@@ -63,6 +63,9 @@ AXIS_NAMES = ("X", "Y", "Z")   # motor 1 = X-as, motor 2 = Y-as, motor 3 = Z-as
 # Jog-richting per as: +1 = ▲ verhoogt stappen, -1 = ▲ verlaagt stappen.
 # Z is omgedraaid zodat ▲ fysiek omhoog beweegt i.p.v. omlaag.
 AXIS_JOG_DIR = (1, 1, -1)
+# Harde software-limiet per as: max |logische positie| in micron. Een jog die
+# hierbuiten zou komen wordt geblokkeerd (zie MotorPanel._jog).
+AXIS_LIMIT_UM = (500.0, 500.0, 500.0)
 
 
 # -------------------- Camera --------------------
@@ -389,11 +392,13 @@ class MotorPanel(QGroupBox):
         """
         if not self.calibration.any_known_position():
             return
-        positions = self._query_positions()
+        positions = self._query_positions()           # hardware-stappen uit firmware
         if positions is None:
             return
-        expected = tuple(m.last_position for m in self.calibration.motors)
-        if positions == expected:
+        # last_position staat logisch opgeslagen; reken firmware om naar logisch.
+        positions_log = tuple(p * AXIS_JOG_DIR[i] for i, p in enumerate(positions))
+        expected = tuple(m.last_position for m in self.calibration.motors)  # logisch
+        if positions_log == expected:
             # Mooie situatie: DTR-onderdrukking heeft geholpen, geen reset.
             for i, p in enumerate(positions):
                 self.targets[i] = p
@@ -406,7 +411,7 @@ class MotorPanel(QGroupBox):
 
         msg = (
             "De motor-positie is veranderd sinds de vorige sessie:\n\n"
-            f"  Firmware nu:           {positions}\n"
+            f"  Firmware nu (logisch): {positions_log}\n"
             f"  Laatst opgeslagen:     {expected}\n\n"
             "Heb je sindsdien de motoren NIET fysiek bewogen?\n\n"
             "[Ja]  Stuur SETPOS naar de oude waarden — kalibratie blijft geldig.\n"
@@ -417,9 +422,10 @@ class MotorPanel(QGroupBox):
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
-            for i, p in enumerate(expected):
-                self._write_raw(f"SETPOS {i + 1} {p}\n")
-                self.targets[i] = p
+            for i, p_log in enumerate(expected):
+                hw = p_log * AXIS_JOG_DIR[i]           # logisch → hardware
+                self._write_raw(f"SETPOS {i + 1} {hw}\n")
+                self.targets[i] = hw
                 self._refresh_target_label(i)
             self.status.setText("Kalibratie hersteld — posities teruggezet via SETPOS.")
             self.status.setStyleSheet("color: green;")
@@ -437,8 +443,9 @@ class MotorPanel(QGroupBox):
                 self.status.setText("Kon positie niet uitlezen (WHERE timeout).")
                 self.status.setStyleSheet("color: red;")
             return
+        # Logisch opslaan (negatief = negatief bewogen), consistent met _jog.
         for i, p in enumerate(positions):
-            self.calibration.motors[i].last_position = p
+            self.calibration.motors[i].last_position = p * AXIS_JOG_DIR[i]
 
     # -----------------------------------------------------------
     #  Acties: snelheid / jog / set-zero / stop / save+load cal
@@ -463,16 +470,33 @@ class MotorPanel(QGroupBox):
         # Micron → stappen via de kalibratie (afronden op hele stappen).
         um_per_step = mm_per_step * 1000.0
         steps = round(um / um_per_step)
-        self.targets[motor_index] += direction * AXIS_JOG_DIR[motor_index] * steps
+        delta = direction * AXIS_JOG_DIR[motor_index] * steps      # hardware-stappen
+        new_target = self.targets[motor_index] + delta
+
+        # Harde limiet: de logische positie mag niet buiten +-AXIS_LIMIT_UM komen.
+        # Bewust vóór verzenden: blokkeert de hele jog, geen halve beweging.
+        new_um = new_target * AXIS_JOG_DIR[motor_index] * um_per_step
+        limit = AXIS_LIMIT_UM[motor_index]
+        if abs(new_um) > limit + 1e-6:
+            self.status.setText(
+                f"Geblokkeerd: {AXIS_NAMES[motor_index]}-as limiet ±{limit:.0f} µm "
+                f"(zou naar {new_um:+.1f} µm gaan)."
+            )
+            self.status.setStyleSheet("color: red;")
+            return
+
+        self.targets[motor_index] = new_target
         self._refresh_target_label(motor_index)
-        target = self.targets[motor_index]
-        cmd = f"{motor_index + 1} {target}\n"
+        cmd = f"{motor_index + 1} {new_target}\n"
         ok = (
             f"{um:.2f} µm = {steps} stappen → "
-            f"{AXIS_NAMES[motor_index]}-as naar {target}"
+            f"{AXIS_NAMES[motor_index]}-as naar {new_um:+.1f} µm"
         )
         if self._write(cmd, ok_msg=ok):
-            self.calibration.motors[motor_index].last_position = target
+            # Logische positie opslaan (negatief = negatief bewogen).
+            self.calibration.motors[motor_index].last_position = (
+                new_target * AXIS_JOG_DIR[motor_index]
+            )
             cal.save(self.calibration)
 
     def _set_zero(self, motor_index: int) -> None:
