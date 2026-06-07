@@ -96,7 +96,7 @@ def fit_confocal(
     Im = np.asarray(Im, dtype=np.float64)
     n = dz1.size
     if n < 2:
-        raise ValueError("Minstens 2 datapunten nodig voor een fit.")
+        raise ValueError("At least 2 data points needed for a fit.")
 
     I0 = float(Im.max())
     q = float(q0)
@@ -153,12 +153,12 @@ def linearize_midpoint(
     elif side == "right":
         mask &= dz1 >= dz1_peak
     elif side != "both":
-        raise ValueError(f"Onbekende side: {side!r} (verwacht left/right/both).")
+        raise ValueError(f"Unknown side: {side!r} (expected left/right/both).")
 
     if int(mask.sum()) < 2:
         raise ValueError(
-            "Te weinig punten binnen de band voor linearisatie "
-            f"(gevonden {int(mask.sum())}, minstens 2 nodig)."
+            "Too few points within the band for linearization "
+            f"(found {int(mask.sum())}, at least 2 needed)."
         )
 
     x_in, y_in = dz1[mask], Im[mask]

@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: MIT
 
-"""Camera-instellingen panel — past helderheid/contrast/belichting aan via OpenCV.
+"""Camera settings panel, adjusts brightness/contrast/exposure via OpenCV.
 
-OpenCV CAP_PROP_*-constanten worden hardcoded zodat dit bestand cv2 zelf niet hoeft te
-importeren. De CameraThread accepteert wijzigingen via een thread-safe set_property().
+OpenCV CAP_PROP_* constants are hardcoded so this file does not have to import
+cv2 itself. The CameraThread accepts changes via a thread-safe set_property().
 
-DirectShow-quirks (Windows):
+DirectShow quirks (Windows):
   - CAP_PROP_AUTO_EXPOSURE: 0.25 = manual, 0.75 = auto
-  - CAP_PROP_EXPOSURE: log2(seconden); -6 = ~16ms, -13 = ~120µs
+  - CAP_PROP_EXPOSURE: log2(seconds); -6 = ~16ms, -13 = ~120µs
 
-Zwart-wit is een software-conversie in CameraThread (BGR→GRAY→BGR), niet via
-CAP_PROP_SATURATION — werkt zo betrouwbaar op elke webcam.
+Grayscale is a software conversion in CameraThread (BGR->GRAY->BGR), not via
+CAP_PROP_SATURATION, which works reliably on any webcam.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 
-# OpenCV CAP_PROP_* — integer-waarden zijn stabiel over cv2-versies
+# OpenCV CAP_PROP_*, integer values are stable across cv2 versions
 CAP_PROP_BRIGHTNESS = 10
 CAP_PROP_CONTRAST = 11
 CAP_PROP_EXPOSURE = 15
@@ -36,13 +36,13 @@ CAP_PROP_AUTO_EXPOSURE = 21
 
 # (label, prop_id, min, max, default, tooltip)
 SLIDERS = [
-    ("Belichting", CAP_PROP_EXPOSURE, -13, 0, -9,
-     "Belichtingstijd in log2 seconden (-9 ≈ 2ms, -6 ≈ 16ms, -13 ≈ 120µs). "
-     "Werkt alleen met Auto-belichting UIT. Lab-licht klipt snel boven -8."),
-    ("Helderheid", CAP_PROP_BRIGHTNESS, 0, 255, 128,
-     "Digitale helderheids-offset (post-sensor). 128 = neutraal."),
+    ("Exposure", CAP_PROP_EXPOSURE, -13, 0, -9,
+     "Exposure time in log2 seconds (-9 ≈ 2ms, -6 ≈ 16ms, -13 ≈ 120µs). "
+     "Only works with Auto-exposure OFF. Lab light clips quickly above -8."),
+    ("Brightness", CAP_PROP_BRIGHTNESS, 0, 255, 128,
+     "Digital brightness offset (post-sensor). 128 = neutral."),
     ("Contrast", CAP_PROP_CONTRAST, 0, 255, 128,
-     "Spreidt grijswaarden uit rond het midden."),
+     "Spreads grey values around the midpoint."),
 ]
 
 
@@ -55,24 +55,24 @@ _DEBOUNCE_MS = 150
 
 
 class CameraSettingsPanel(QGroupBox):
-    """Tab-paneel met sliders voor de meest-gebruikte OpenCV camera-properties."""
+    """Tab panel with sliders for the most-used OpenCV camera properties."""
 
     def __init__(self, camera_thread: _SupportsCamera) -> None:
-        super().__init__("Camera-instellingen")
+        super().__init__("Camera settings")
         self.camera_thread = camera_thread
         self._sliders: list[QSlider] = []
         self._value_labels: list[QLabel] = []
-        # Debounce-state: slider-bewegingen verzamelen we hier, en pas wanneer
-        # de gebruiker ~_DEBOUNCE_MS niks doet pushen we naar de cap-thread.
-        # Zo voorkomen we dat DirectShow tientallen cap.set() calls per sec krijgt.
+        # Debounce state: slider movements are collected here, and only once the
+        # user has been idle for ~_DEBOUNCE_MS do we push to the cap thread. This
+        # prevents DirectShow getting dozens of cap.set() calls per second.
         self._pending_values: dict[int, float] = {}
         self._debounce_timer = QTimer(self)
         self._debounce_timer.setSingleShot(True)
         self._debounce_timer.setInterval(_DEBOUNCE_MS)
         self._debounce_timer.timeout.connect(self._flush_pending)
         self._build_ui()
-        # Defaults pas ~500ms na app-start naar de cap pushen — geeft thread
-        # tijd om VideoCapture te openen
+        # Push defaults to the cap only ~500ms after app start, giving the thread
+        # time to open VideoCapture
         QTimer.singleShot(500, self._apply_initial)
 
     def _build_ui(self) -> None:
@@ -81,21 +81,21 @@ class CameraSettingsPanel(QGroupBox):
         layout.setHorizontalSpacing(10)
         r = 0
 
-        # Toggles bovenaan — Auto-belichting + Zwart-wit
-        self.auto_exp_cb = QCheckBox("Auto-belichting")
+        # Toggles at the top, Auto-exposure + Grayscale
+        self.auto_exp_cb = QCheckBox("Auto-exposure")
         self.auto_exp_cb.setToolTip(
-            "AAN = camera regelt belichting zelf (aanbevolen voor wisselend "
-            "lab-licht). UIT = handmatige Belichting-slider werkt."
+            "ON = camera controls exposure itself (recommended for changing "
+            "lab light). OFF = the manual Exposure slider works."
         )
-        self.auto_exp_cb.setChecked(True)  # default auto — consistent met AUTO_WB/AUTOFOCUS
+        self.auto_exp_cb.setChecked(True)  # default auto, consistent with AUTO_WB/AUTOFOCUS
         self.auto_exp_cb.toggled.connect(self._on_auto_exposure)
         layout.addWidget(self.auto_exp_cb, r, 0, 1, 3)
         r += 1
 
-        self.bw_cb = QCheckBox("Zwart-wit beeld")
+        self.bw_cb = QCheckBox("Grayscale image")
         self.bw_cb.setToolTip(
-            "AAN = live beeld in grayscale (software-conversie). "
-            "Beïnvloedt scan-recording niet, alleen de preview."
+            "ON = live image in grayscale (software conversion). "
+            "Does not affect scan recording, only the preview."
         )
         self.bw_cb.toggled.connect(self._on_grayscale)
         layout.addWidget(self.bw_cb, r, 0, 1, 3)
@@ -125,12 +125,12 @@ class CameraSettingsPanel(QGroupBox):
             self._value_labels.append(val_lbl)
             r += 1
 
-        # Belichting-slider start uitgeschakeld omdat auto-belichting default AAN is
+        # Exposure slider starts disabled because auto-exposure is on by default
         self._set_exposure_slider_enabled(False)
 
-        # Reset-knop
-        reset_btn = QPushButton("↺ Reset naar defaults")
-        reset_btn.setToolTip("Zet alle sliders terug naar hun start-waarde")
+        # Reset button
+        reset_btn = QPushButton("↺ Reset to defaults")
+        reset_btn.setToolTip("Set all sliders back to their start value")
         reset_btn.clicked.connect(self._reset_all)
         layout.addWidget(reset_btn, r, 0, 1, 3)
         r += 1
@@ -138,11 +138,11 @@ class CameraSettingsPanel(QGroupBox):
         layout.setColumnStretch(1, 1)
         layout.setRowStretch(r, 1)
 
-    # ---- camera-sync -----------------------------------------------
+    # ---- camera sync -----------------------------------------------
 
     def _apply_initial(self) -> None:
-        """Push initiële slider-waarden naar de camera-thread."""
-        # Default: auto-belichting AAN (DirectShow: 0.75 = auto, 0.25 = manual)
+        """Push initial slider values to the camera thread."""
+        # Default: auto-exposure ON (DirectShow: 0.75 = auto, 0.25 = manual)
         self.camera_thread.set_property(CAP_PROP_AUTO_EXPOSURE, 0.75)
         for slider in self._sliders:
             prop_id = int(slider.property("prop_id"))
@@ -154,13 +154,13 @@ class CameraSettingsPanel(QGroupBox):
             return
         prop_id = int(slider.property("prop_id"))
         idx = self._sliders.index(slider)
-        # Label direct updaten (gratis); cap.set() debouncen
+        # Update label immediately (free); debounce cap.set()
         self._value_labels[idx].setText(str(value))
         self._pending_values[prop_id] = float(value)
         self._debounce_timer.start()  # restart countdown
 
     def _flush_pending(self) -> None:
-        """Push opgespaarde slider-waarden in één batch naar de camera-thread."""
+        """Push collected slider values to the camera thread in one batch."""
         pending = self._pending_values
         self._pending_values = {}
         for prop_id, value in pending.items():
@@ -170,12 +170,12 @@ class CameraSettingsPanel(QGroupBox):
         self.camera_thread.set_grayscale(on)
 
     def _on_auto_exposure(self, on: bool) -> None:
-        # Toggle is een one-off action → direct pushen, geen debounce nodig.
+        # The toggle is a one-off action, push immediately, no debounce needed.
         # DirectShow: 0.75 = auto, 0.25 = manual.
         self.camera_thread.set_property(CAP_PROP_AUTO_EXPOSURE, 0.75 if on else 0.25)
         self._set_exposure_slider_enabled(not on)
-        # Als gebruiker net naar manual switcht, push direct de huidige slider-waarde
-        # zodat de cam meteen de manual exposure pakt i.p.v. zijn interne fallback.
+        # If the user just switched to manual, push the current slider value right
+        # away so the cam takes the manual exposure instead of its internal fallback.
         if not on:
             for slider in self._sliders:
                 if int(slider.property("prop_id")) == CAP_PROP_EXPOSURE:
@@ -192,7 +192,7 @@ class CameraSettingsPanel(QGroupBox):
         for label, prop_id, _, _, default, _ in SLIDERS:
             for slider in self._sliders:
                 if int(slider.property("prop_id")) == prop_id:
-                    slider.setValue(default)  # triggert _on_slider_change
+                    slider.setValue(default)  # triggers _on_slider_change
                     break
         self.bw_cb.setChecked(False)
-        self.auto_exp_cb.setChecked(True)  # reset naar auto-belichting AAN
+        self.auto_exp_cb.setChecked(True)  # reset to auto-exposure ON

@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: MIT
 
-"""Kalibratie persistentie voor Bep-Project.
+"""Calibration persistence for the Bep-Project.
 
-Bewaart per motor:
-  - mm_per_step: hoe groot is een stap fysiek (mm). 0 = niet gekalibreerd.
-  - last_position: laatste bekende positie in stappen, uitgelezen via firmware
-                   "WHERE"-commando bij disconnect / Save.
-  - note: vrije tekst, bv. "kruisdraadje op preparaat-hoek X".
+Stores per motor:
+  - mm_per_step: how large a step is physically (mm). 0 = not calibrated.
+  - last_position: last known position in steps, read via the firmware
+                   "WHERE" command on disconnect / Save.
+  - note: free text, e.g. "crosshair on sample corner X".
 
-Bestand: calibration.yaml in de project-root.
+File: calibration.yaml in the project root.
 """
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ CALIBRATION_PATH = Path("calibration.yaml")
 
 @dataclass
 class MotorCal:
-    mm_per_step: float = 0.0           # 0 = niet gekalibreerd
-    last_position: int = 0             # stappen
+    mm_per_step: float = 0.0           # 0 = not calibrated
+    last_position: int = 0             # steps
     note: str = ""
 
     def is_calibrated(self) -> bool:
@@ -51,7 +51,7 @@ class Calibration:
 
 
 def load(path: Path = CALIBRATION_PATH) -> Calibration:
-    """Laad bestaand kalibratiebestand of geef defaults terug."""
+    """Load an existing calibration file or return defaults."""
     if not path.exists():
         return Calibration()
     try:

@@ -1,18 +1,23 @@
 # SPDX-License-Identifier: MIT
 
-"""Manual burst-recording voor Bep-Project.
+"""Manual burst recording for the Bep-Project.
 
-Eén klik op 'Burst' → één Datalogger-burst (fs × T samples) bij de huidige
-motor-positie. Output:
+One click on 'Burst' -> one Datalogger burst (fs x T samples) at the current
+motor position. Output:
 
-    data/manual_<timestamp>_<naam>/
-        burst.csv         # ruwe meting: t_s, voltage_V — NL-locale
-        position.csv      # afgeleid: t_s, dz1_mm (alleen met I0 gezet) via A6
-        metadata.txt      # Moku-config, I0, motor-positie, statistics
+    data/manual_<timestamp>_<name>/
+        burst.csv         # raw measurement: t_s, voltage_V (NL locale)
+        position.csv      # derived: t_s, dz1_mm via the calibration line
+        metadata.txt      # Moku config, calibration line, motor position, stats
 
-Werkt als snelle handmatige test van de hele pipeline (Moku-frontend →
-Datalogger → V→dz1 conversie) — dezelfde acquisitie als ScanPanel doet per
-punt, maar nu één klik = één punt. Als dit werkt, werkt de auto-scan ook.
+The voltage -> displacement conversion uses the linearized calibration line
+(dz1 = (V - b) / a) fitted in the 'Calibration graph' tab. That line is only
+valid inside its voltage band [lo, hi]; if the burst leaves that band a warning
+is shown because the displacement would be an extrapolation.
+
+Works as a quick manual test of the whole pipeline (Moku frontend ->
+Datalogger -> calibration line), the same acquisition ScanPanel does per point,
+but now one click = one point. If this works, the auto-scan works too.
 """
 from __future__ import annotations
 
@@ -29,15 +34,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
-    QDoubleSpinBox,
-    QFrame,
     QGridLayout,
     QGroupBox,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -48,18 +51,17 @@ from matplotlib.figure import Figure
 
 
 DATA_ROOT = Path("data")
-FS_DEFAULT_KHZ = 1000  # 1000 kSa/s = 1 MHz (Moku:Go Datalogger-max) → Nyquist 500 kHz
-T_DEFAULT_MS = 10      # 10 ms → FFT-bin 100 Hz
-F1_DEFAULT_MM = 25.0   # spiegelt confocal.f1 — brandpuntsafstand lens 1 (mm)
+FS_DEFAULT_KHZ = 1000  # 1000 kSa/s = 1 MHz (Moku:Go Datalogger max) -> Nyquist 500 kHz
+T_DEFAULT_MS = 10      # 10 ms -> FFT bin 100 Hz
 
 
 def amplitude_spectrum(signal: np.ndarray, fs: float) -> tuple[np.ndarray, np.ndarray]:
-    """Eenzijdig amplitudespectrum via Hann-window + reële FFT.
+    """One-sided amplitude spectrum via Hann window + real FFT.
 
-    Retourneert (frequenties_Hz, amplitude). De amplitude is de geschatte
-    sinus-amplitude per frequentiecomponent (window-gecompenseerd, zelfde eenheid
-    als het ingangssignaal). Het DC-gemiddelde wordt eerst verwijderd zodat de
-    0 Hz-piek de trillingsamplitudes niet overstemt.
+    Returns (frequencies_Hz, amplitude). The amplitude is the estimated sine
+    amplitude per frequency component (window-compensated, same unit as the input
+    signal). The DC mean is removed first so the 0 Hz peak does not drown out the
+    vibration amplitudes.
     """
     x = np.asarray(signal, dtype=np.float64)
     n = x.size
@@ -74,7 +76,7 @@ def amplitude_spectrum(signal: np.ndarray, fs: float) -> tuple[np.ndarray, np.nd
 
 
 class FFTWindow(QDialog):
-    """Niet-modaal venster met het amplitudespectrum (dz1) van één burst."""
+    """Non-modal window with the amplitude spectrum (dz1) of one burst."""
 
     def __init__(self, freqs: np.ndarray, amp: np.ndarray, title: str,
                  parent=None) -> None:
@@ -90,13 +92,13 @@ class FFTWindow(QDialog):
 
         ax = fig.add_subplot(111)
         ax.plot(freqs, amp, lw=1.0, color="#2563eb")
-        ax.set_xlabel("frequentie (Hz)")
+        ax.set_xlabel("frequency (Hz)")
         ax.set_ylabel("amplitude dz1 (µm)")
         ax.grid(True, alpha=0.3)
         if freqs.size:
             ax.set_xlim(0, float(freqs[-1]))
 
-        # Markeer de dominante piek (DC-bin overgeslagen).
+        # Mark the dominant peak (DC bin skipped).
         if amp.size > 1:
             k = int(np.argmax(amp[1:])) + 1
             ax.annotate(
@@ -111,47 +113,50 @@ class FFTWindow(QDialog):
 
 
 class RecordingPanel(QGroupBox):
-    def __init__(self, moku_panel, motor_panel, lamp_panel) -> None:
+    def __init__(self, moku_panel, motor_panel, lamp_panel,
+                 calibration_graph_panel=None) -> None:
         super().__init__("Manual burst")
         self.moku_panel = moku_panel
         self.motor_panel = motor_panel
         self.lamp_panel = lamp_panel
+        # Source of the linearized calibration line used for V -> dz1 conversion.
+        self.calibration_graph_panel = calibration_graph_panel
         self._run_dir: Path | None = None
         self._fft_window: FFTWindow | None = None
 
         layout = QGridLayout(self)
 
-        # ---- Run-naam ----
-        layout.addWidget(QLabel("Naam:"), 0, 0)
+        # ---- Run name ----
+        layout.addWidget(QLabel("Name:"), 0, 0)
         self.name_input = QLineEdit("manual")
         layout.addWidget(self.name_input, 0, 1, 1, 3)
 
         # ---- Burst parameters ----
-        layout.addWidget(QLabel("Sample-rate:"), 1, 0)
+        layout.addWidget(QLabel("Sample rate:"), 1, 0)
         self.fs_khz = QSpinBox()
         self.fs_khz.setRange(1, 1000)
         self.fs_khz.setSingleStep(10)
         self.fs_khz.setValue(FS_DEFAULT_KHZ)
         self.fs_khz.setSuffix(" kSa/s")
-        self.fs_khz.setToolTip("Hoger = hogere maximale frequentie (Nyquist = fs/2)")
+        self.fs_khz.setToolTip("Higher = higher maximum frequency (Nyquist = fs/2)")
         layout.addWidget(self.fs_khz, 1, 1)
 
-        layout.addWidget(QLabel("Burst-duur:"), 1, 2)
+        layout.addWidget(QLabel("Burst duration:"), 1, 2)
         self.T_ms = QSpinBox()
         self.T_ms.setRange(10, 10000)
         self.T_ms.setSingleStep(50)
         self.T_ms.setValue(T_DEFAULT_MS)
         self.T_ms.setSuffix(" ms")
-        self.T_ms.setToolTip("Langer = fijnere FFT-frequentie-resolutie (1/T)")
+        self.T_ms.setToolTip("Longer = finer FFT frequency resolution (1/T)")
         layout.addWidget(self.T_ms, 1, 3)
 
-        # ---- Burst-knop + Open folder ----
+        # ---- Burst button + Open folder ----
         self.record_btn = QPushButton("● Burst")
         self.record_btn.setObjectName("DangerButton")
         self.record_btn.setToolTip(
-            "Doe één Datalogger-burst bij de huidige motor-positie.\n"
-            "Vereist een I0-baseline (klik eerst 'Set I0').\n"
-            "Output: burst.csv (ruwe voltage) + position.csv (dz1 in mm)."
+            "Take one Datalogger burst at the current motor position.\n"
+            "Requires a fitted calibration line (Calibration graph tab).\n"
+            "Output: burst.csv (raw voltage) + position.csv (dz1 via the line)."
         )
         self.record_btn.clicked.connect(self._take_burst)
         layout.addWidget(self.record_btn, 2, 0, 1, 2)
@@ -162,99 +167,64 @@ class RecordingPanel(QGroupBox):
         layout.addWidget(self.open_btn, 2, 2, 1, 2)
 
         # ---- Status ----
-        self.status = QLabel("Klaar — klik 'Burst' om één meting te doen.")
+        self.status = QLabel("Ready, click 'Burst' to take one measurement.")
         self.status.setStyleSheet("color: gray;")
         self.status.setWordWrap(True)
         layout.addWidget(self.status, 3, 0, 1, 4)
 
-        # ---- Optica: lens f1 (gaat in formule A6 voor V→dz1) ----
-        f1_row = QHBoxLayout()
-        f1_row.setSpacing(8)
-        f1_row.addWidget(QLabel("Lens f1:"))
-        self.f1_mm = QDoubleSpinBox()
-        self.f1_mm.setRange(1.0, 1000.0)
-        self.f1_mm.setDecimals(2)
-        self.f1_mm.setSingleStep(0.5)
-        self.f1_mm.setValue(F1_DEFAULT_MM)
-        self.f1_mm.setSuffix(" mm")
-        self.f1_mm.setToolTip(
-            "Brandpuntsafstand van lens 1 (f1) in formule A6.\n"
-            "Bepaalt de schaal van de V→verplaatsing (dz1) omrekening."
-        )
-        f1_row.addWidget(self.f1_mm)
-        f1_row.addStretch(1)
-        f1_wrap = QFrame()
-        f1_wrap.setLayout(f1_row)
-        layout.addWidget(f1_wrap, 4, 0, 1, 4)
-
-        # ---- I0-baseline (handmatig invoeren) ----
-        i0_row = QHBoxLayout()
-        i0_row.setSpacing(8)
-        i0_row.addWidget(QLabel("I0:"))
-        self.i0_input = QDoubleSpinBox()
-        self.i0_input.setRange(0.0, 50.0)
-        self.i0_input.setDecimals(4)
-        self.i0_input.setSingleStep(0.1)
-        self.i0_input.setSuffix(" V")
-        self.i0_input.setSpecialValueText("niet ingesteld")
-        self.i0_input.setToolTip(
-            "Baseline-spanning I0 (volledige reflectie) voor de V→dz1 omrekening.\n"
-            "Vul de gemeten waarde zelf in. 0 = niet ingesteld → alleen burst.csv (voltage)."
-        )
-        if self.moku_panel.I0:
-            self.i0_input.setValue(float(self.moku_panel.I0))
-        self.i0_input.valueChanged.connect(self._on_i0_changed)
-        i0_row.addWidget(self.i0_input)
-
-        self.i0_label = QLabel("")
-        self.i0_label.setStyleSheet("color: gray;")
-        i0_row.addWidget(self.i0_label, stretch=1)
-
-        i0_wrap = QFrame()
-        i0_wrap.setLayout(i0_row)
-        layout.addWidget(i0_wrap, 5, 0, 1, 4)
-        self._refresh_i0_label()
-
-        # ---- Recente runs ----
-        runs_lbl = QLabel("Recente runs")
+        # ---- Recent runs ----
+        runs_lbl = QLabel("Recent runs")
         runs_lbl.setProperty("role", "caption")
-        layout.addWidget(runs_lbl, 6, 0, 1, 4)
+        layout.addWidget(runs_lbl, 4, 0, 1, 4)
 
         self.runs_list = QListWidget()
-        self.runs_list.setToolTip("Dubbel-klik om de map te openen")
+        self.runs_list.setToolTip("Double-click to open the folder")
         self.runs_list.itemDoubleClicked.connect(self._open_run_folder)
-        layout.addWidget(self.runs_list, 7, 0, 1, 4)
+        layout.addWidget(self.runs_list, 5, 0, 1, 4)
 
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(3, 1)
-        layout.setRowStretch(7, 1)
+        layout.setRowStretch(5, 1)
 
         self._refresh_runs()
 
-    # ---- I0-baseline ----
+    # ---- Calibration line ----
 
-    def _on_i0_changed(self, value: float) -> None:
-        self.moku_panel.I0 = value if value > 0.0 else None
-        self._refresh_i0_label()
+    def _get_linearization(self):
+        """Return the latest linearization from the calibration graph, or None."""
+        if self.calibration_graph_panel is None:
+            return None
+        return self.calibration_graph_panel.get_linearization()
 
-    def _refresh_i0_label(self) -> None:
-        if self.moku_panel.I0:
-            self.i0_label.setText("→ position.csv (dz1 in mm)")
-            self.i0_label.setStyleSheet("color: #1e8449; font-weight: bold;")
-        else:
-            self.i0_label.setText("geen I0 → alleen voltage")
-            self.i0_label.setStyleSheet("color: gray;")
+    @staticmethod
+    def _dz1_mm_from_voltage(samples: np.ndarray, lin) -> np.ndarray:
+        """Convert voltage (V) to displacement dz1 (mm) via the line dz1 = (V - b) / a."""
+        return (np.asarray(samples, dtype=np.float64) - lin.b) / lin.a
+
+    @staticmethod
+    def _count_out_of_band(samples: np.ndarray, lin) -> int:
+        """Number of samples whose voltage falls outside the linear band [lo, hi]."""
+        s = np.asarray(samples, dtype=np.float64)
+        return int(np.count_nonzero((s < lin.lo) | (s > lin.hi)))
 
     # ---- Burst ----
 
     def _take_burst(self) -> None:
         if self.moku_panel.thread is None or not self.moku_panel.thread.isRunning():
-            self.status.setText("Moku niet verbonden — verbind eerst MokuPanel.")
+            self.status.setText("Moku not connected, connect MokuPanel first.")
             self.status.setStyleSheet("color: red;")
             return
-        if not self.moku_panel.I0:
+
+        lin = self._get_linearization()
+        if lin is None:
             self.status.setText(
-                "Stel eerst I0 in (klik 'Set I0') — zonder baseline geen verplaatsing."
+                "No calibration line yet. Fit one in the 'Calibration graph' tab first."
+            )
+            self.status.setStyleSheet("color: red;")
+            return
+        if abs(lin.a) < 1e-12:
+            self.status.setText(
+                "Calibration line slope is ~0, cannot convert voltage to position."
             )
             self.status.setStyleSheet("color: red;")
             return
@@ -263,7 +233,7 @@ class RecordingPanel(QGroupBox):
         T = self.T_ms.value() / 1000.0
 
         self.record_btn.setEnabled(False)
-        self.status.setText("Burst-mode openen (instrument-switch ~3-5s)…")
+        self.status.setText("Opening burst mode (instrument switch ~3-5s)...")
         self.status.setStyleSheet("color: #b8860b;")
         QApplication.processEvents()
 
@@ -271,12 +241,12 @@ class RecordingPanel(QGroupBox):
         try:
             self.moku_panel.start_burst_mode()
             self.status.setText(
-                f"Burst loopt — {fs_hz/1000:.0f} kSa/s × {self.T_ms.value()} ms…"
+                f"Burst running, {fs_hz/1000:.0f} kSa/s x {self.T_ms.value()} ms..."
             )
             QApplication.processEvents()
             samples = self.moku_panel.acquire_burst(fs_hz, T)
         except Exception as e:
-            self.status.setText(f"Burst-fout: {e}")
+            self.status.setText(f"Burst error: {e}")
             self.status.setStyleSheet("color: red;")
         finally:
             try:
@@ -288,11 +258,15 @@ class RecordingPanel(QGroupBox):
             self.record_btn.setEnabled(True)
             return
 
+        # Notify when the measurement leaves the band where the line is valid.
+        n_out = self._count_out_of_band(samples, lin)
+        self._maybe_warn_out_of_band(samples, lin, n_out)
+
         try:
-            run_dir = self._save_burst(samples, fs_hz)
+            run_dir = self._save_burst(samples, fs_hz, lin, n_out)
         except Exception as e:
             self.record_btn.setEnabled(True)
-            self.status.setText(f"Schrijf-fout: {e}")
+            self.status.setText(f"Write error: {e}")
             self.status.setStyleSheet("color: red;")
             return
 
@@ -301,22 +275,41 @@ class RecordingPanel(QGroupBox):
         std = float(np.std(samples))
         self._run_dir = run_dir
         self.open_btn.setEnabled(True)
-        pos_note = ("  +position.csv (dz1 mm)" if getattr(self, "_wrote_position", False)
-                    else "  (geen I0 → geen position.csv)")
+        band_note = (f"  ⚠ {n_out} samples outside linear band"
+                     if n_out else "  (all samples in linear band)")
         self.status.setText(
-            f"✓ {samples.size} samples → {run_dir.name}{pos_note}\n"
+            f"✓ {samples.size} samples -> {run_dir.name}{band_note}\n"
+            f"   position via line dz1=(V-b)/a (a={lin.a:.4f} V/mm)\n"
             f"   mean={mean:+.4e} V   pp={pp:.4e} V   std={std:.4e} V"
         )
-        self.status.setStyleSheet("color: #1e8449; font-weight: bold;")
+        self.status.setStyleSheet(
+            "color: #c0392b; font-weight: bold;" if n_out
+            else "color: #1e8449; font-weight: bold;"
+        )
         self.record_btn.setEnabled(True)
         self._refresh_runs()
-        self._show_fft(samples, fs_hz, run_dir)
+        self._show_fft(samples, fs_hz, run_dir, lin)
 
-    def _show_fft(self, samples: np.ndarray, fs_hz: int, run_dir: Path) -> None:
-        """Bereken het dz1-amplitudespectrum, sla fft.png op en toon de popup."""
-        from datalogger import voltage_to_dz1
-        dz1_um = voltage_to_dz1(samples, self.moku_panel.I0,
-                                f1=self.f1_mm.value()) * 1000.0   # mm → µm
+    def _maybe_warn_out_of_band(self, samples: np.ndarray, lin, n_out: int) -> None:
+        """Pop a warning if the burst voltage left the linear calibration band."""
+        if not n_out:
+            return
+        pct = 100.0 * n_out / samples.size
+        v_min, v_max = float(np.min(samples)), float(np.max(samples))
+        QMessageBox.warning(
+            self, "Outside linear range",
+            f"{n_out} of {samples.size} samples ({pct:.1f}%) fell outside the "
+            f"linear calibration band.\n\n"
+            f"  Linear band:    [{lin.lo:.4f}, {lin.hi:.4f}] V\n"
+            f"  Measured range: [{v_min:.4f}, {v_max:.4f}] V\n\n"
+            "The displacement from the calibration line is only valid inside the "
+            "band; values outside it are extrapolated and may be inaccurate. "
+            "Adjust the operating point (focus) so the signal stays within the band."
+        )
+
+    def _show_fft(self, samples: np.ndarray, fs_hz: int, run_dir: Path, lin) -> None:
+        """Compute the dz1 amplitude spectrum, save fft.png and show the popup."""
+        dz1_um = self._dz1_mm_from_voltage(samples, lin) * 1000.0   # mm -> µm
         freqs, amp = amplitude_spectrum(dz1_um, fs_hz)
         if freqs.size == 0:
             return
@@ -326,51 +319,48 @@ class RecordingPanel(QGroupBox):
         try:
             self._fft_window.figure.savefig(run_dir / "fft.png", dpi=150)
         except OSError as e:
-            self.status.setText(f"{self.status.text()}\n   (fft.png niet opgeslagen: {e})")
+            self.status.setText(f"{self.status.text()}\n   (fft.png not saved: {e})")
         self._fft_window.show()
 
-    def _save_burst(self, samples: np.ndarray, fs_hz: int) -> Path:
+    def _save_burst(self, samples: np.ndarray, fs_hz: int, lin, n_out: int) -> Path:
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         name = (self.name_input.text() or "manual").strip().replace(" ", "_")
         run_dir = DATA_ROOT / f"manual_{ts}_{name}"
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        # burst.csv — ALTIJD ruwe voltage (t_s, voltage_V). NL-locale (; , ).
+        # burst.csv, ALWAYS raw voltage (t_s, voltage_V). NL locale (; , ).
         t = np.arange(samples.size, dtype=np.float64) / fs_hz
         df = pd.DataFrame({"t_s": t, "voltage_V": samples})
         df.to_csv(run_dir / "burst.csv", sep=";", decimal=",",
                   index=False, float_format="%.7e")
 
-        # position.csv — afgeleide verplaatsing dz1 (mm) per row, via formule A6.
-        # Alleen mogelijk met een I0-baseline; anders overslaan.
-        I0 = self.moku_panel.I0
-        wrote_position = False
-        if I0:
-            from datalogger import voltage_to_dz1
-            dz1 = voltage_to_dz1(samples, I0, f1=self.f1_mm.value())
-            df_pos = pd.DataFrame({"t_s": t, "dz1_mm": dz1})
-            df_pos.to_csv(run_dir / "position.csv", sep=";", decimal=",",
-                          index=False, float_format="%.7e")
-            wrote_position = True
-        self._wrote_position = wrote_position
+        # position.csv, derived displacement dz1 (mm) per row via the calibration
+        # line dz1 = (V - b) / a.
+        dz1 = self._dz1_mm_from_voltage(samples, lin)
+        df_pos = pd.DataFrame({"t_s": t, "dz1_mm": dz1})
+        df_pos.to_csv(run_dir / "position.csv", sep=";", decimal=",",
+                      index=False, float_format="%.7e")
 
         mp = self.moku_panel
         mt = self.motor_panel
-        I0_str = f"{mp.I0:.6f}" if mp.I0 is not None else "not_set"
-        position_note = ("position.csv (t_s, dz1_mm via formule A6)"
-                         if wrote_position else "geen — I0 niet ingesteld")
+        pct_out = 100.0 * n_out / samples.size if samples.size else 0.0
         meta = (
             "# Bep-Project manual burst\n"
-            "# as-mapping: motor1 = X-as, motor2 = Y-as, motor3 = Z-as (focus)\n"
+            "# axis mapping: motor1 = X axis, motor2 = Y axis, motor3 = Z axis (focus)\n"
             f"timestamp: {datetime.now().isoformat(timespec='seconds')}\n"
             f"name: {name}\n"
             f"fs_Hz: {fs_hz}\n"
             f"T_ms: {self.T_ms.value()}\n"
             f"n_samples: {samples.size}\n"
-            f"raw_format: burst.csv (t_s, voltage_V), NL-locale (; sep, , decimal)\n"
-            f"position_file: {position_note}\n"
-            f"lens_f1_mm: {self.f1_mm.value():.4f}\n"
-            f"I0_V: {I0_str}\n"
+            f"raw_format: burst.csv (t_s, voltage_V), NL locale (; sep, , decimal)\n"
+            f"position_file: position.csv (t_s, dz1_mm via calibration line)\n"
+            f"position_method: linearized calibration line dz1 = (V - b) / a\n"
+            f"lin_a_V_per_mm: {lin.a:.8f}\n"
+            f"lin_b_V: {lin.b:.8f}\n"
+            f"lin_band_lo_V: {lin.lo:.6f}\n"
+            f"lin_band_hi_V: {lin.hi:.6f}\n"
+            f"lin_R2: {lin.R2:.6f}\n"
+            f"samples_outside_band: {n_out} ({pct_out:.1f}%)\n"
             f"moku_address: {mp.address_input.text()}\n"
             f"moku_channel: {mp.channel_combo.currentText()}\n"
             f"moku_range: {mp.range_combo.currentText()}\n"
@@ -393,7 +383,7 @@ class RecordingPanel(QGroupBox):
         (run_dir / "metadata.txt").write_text(meta, encoding="utf-8")
         return run_dir
 
-    # ---- Open / runs-lijst ----
+    # ---- Open / runs list ----
 
     def _open_folder(self) -> None:
         if self._run_dir is None or not self._run_dir.exists():
@@ -455,5 +445,5 @@ class RecordingPanel(QGroupBox):
         self._refresh_runs()
 
     def close_recording(self) -> None:
-        # Bursts zijn synchroon — niets persistents om te sluiten bij afsluiten.
+        # Bursts are synchronous, nothing persistent to close on shutdown.
         return None

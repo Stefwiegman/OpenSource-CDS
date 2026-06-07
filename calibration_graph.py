@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: MIT
 
-"""Calibratiegrafiek-tab voor Bep-Project.
+"""Calibration graph tab for the Bep-Project.
 
-Gebruiker uploadt een Excel- of CSV-bestand met twee kolommen (dz1 in mm,
-I_m in V). Het
-confocale A6-model (ml.fit_confocal) fit q en r0 op de punten; de tab toont in
-een ingebedde grafiek de data, de gefitte curve en de theoriecurve, plus de
-fit-metrics (q, r0, I0, R², RMSE).
+The user uploads an Excel or CSV file with two columns (dz1 in mm, I_m in V).
+The confocal A6 model (ml.fit_confocal) fits q and r0 to the points; the tab
+shows the data, the fitted curve and the theory curve in an embedded graph, plus
+the fit metrics (q, r0, I0, R^2, RMSE).
 
-De fit en het A6-model komen volledig uit ml.py — deze tab tekent alleen.
+The fit and the A6 model come entirely from ml.py, this tab only draws.
 """
 from __future__ import annotations
 
@@ -43,11 +42,11 @@ F1_DEFAULT_MM = 40.0
 
 
 def _read_raw(path: Path, header) -> pd.DataFrame:
-    """Lees een Excel- of CSV-bestand in een DataFrame met de gegeven header.
+    """Read an Excel or CSV file into a DataFrame with the given header.
 
-    CSV-detectie: NL-locale CSV (zoals burst.csv) gebruikt ';' als scheidings-
-    teken en een komma als decimaal; standaard-CSV gebruikt ',' en een punt.
-    We kijken naar de eerste niet-lege regel: bevat die een ';', dan NL-locale.
+    CSV detection: NL-locale CSV (like burst.csv) uses ';' as separator and a
+    comma as decimal; standard CSV uses ',' and a dot. We look at the first
+    non-empty line: if it contains a ';', it is NL locale.
     """
     suffix = path.suffix.lower()
     if suffix in (".xlsx", ".xls"):
@@ -60,15 +59,15 @@ def _read_raw(path: Path, header) -> pd.DataFrame:
                 break
         sep, dec = (";", ",") if ";" in first else (",", ".")
         return pd.read_csv(path, sep=sep, decimal=dec, header=header)
-    raise ValueError(f"Niet-ondersteund bestandstype: {suffix or '(geen extensie)'}")
+    raise ValueError(f"Unsupported file type: {suffix or '(no extension)'}")
 
 
 def _load_xy(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """Lees (dz1, I_m) uit een Excel- of CSV-bestand met twee kolommen.
+    """Read (dz1, I_m) from an Excel or CSV file with two columns.
 
-    Probeert eerst zonder header; blijkt de eerste rij tekst (een header), dan
-    opnieuw met header=0. Niet-numerieke rijen worden weggefilterd. Retourneert
-    (dz1_mm, Im_V) als float-arrays.
+    Tries without a header first; if the first row turns out to be text (a
+    header), retries with header=0. Non-numeric rows are filtered out. Returns
+    (dz1_mm, Im_V) as float arrays.
     """
     df = _read_raw(path, header=None)
     try:
@@ -83,27 +82,27 @@ def _load_xy(path: Path) -> tuple[np.ndarray, np.ndarray]:
 
 
 class CalibrationGraphPanel(QGroupBox):
-    """Upload meetpunten, fit het A6-model en toon de calibratiegrafiek."""
+    """Upload measurement points, fit the A6 model and show the calibration graph."""
 
     def __init__(self) -> None:
-        super().__init__("Calibratiegrafiek")
+        super().__init__("Calibration graph")
         self._dz1: np.ndarray | None = None
         self._Im: np.ndarray | None = None
         self._loaded_name = ""
         self._src_path: Path | None = None
         self._last_res: ml.FitResult | None = None
         self._last_lin: ml.LinearizationResult | None = None
-        # Artist-groepen per grafiek-laag (gevuld in _fit_and_plot), zodat de
-        # toggles ze live zichtbaar/onzichtbaar kunnen zetten.
+        # Artist groups per graph layer (filled in _fit_and_plot), so the toggles
+        # can show/hide them live.
         self._artists: dict[str, list] = {}
 
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(10)
 
-        # ---- bedieningsrij ----
+        # ---- control row ----
         controls = QHBoxLayout()
-        self.upload_btn = QPushButton("Excel uploaden")
+        self.upload_btn = QPushButton("Upload Excel")
         self.upload_btn.clicked.connect(self._upload)
         controls.addWidget(self.upload_btn)
 
@@ -116,14 +115,14 @@ class CalibrationGraphPanel(QGroupBox):
         self.f1_input.setSuffix(" mm")
         controls.addWidget(self.f1_input)
 
-        self.fit_btn = QPushButton("Fit & toon")
+        self.fit_btn = QPushButton("Fit & show")
         self.fit_btn.clicked.connect(self._fit_and_plot)
         self.fit_btn.setEnabled(False)
         controls.addWidget(self.fit_btn)
 
-        self.save_btn = QPushButton("Opslaan")
+        self.save_btn = QPushButton("Save")
         self.save_btn.setToolTip(
-            "Sla de Excel-kopie, de grafiek (PNG) en de fit-resultaten op in data/."
+            "Save the Excel copy, the graph (PNG) and the fit results in data/."
         )
         self.save_btn.clicked.connect(self._save)
         self.save_btn.setEnabled(False)
@@ -131,15 +130,15 @@ class CalibrationGraphPanel(QGroupBox):
         controls.addStretch(1)
         root.addLayout(controls)
 
-        # ---- toggle-rij: zet grafiek-lagen live aan/uit ----
+        # ---- toggle row: turn graph layers on/off live ----
         toggles = QHBoxLayout()
-        toggles.addWidget(QLabel("Toon:"))
+        toggles.addWidget(QLabel("Show:"))
         self.layer_toggles: dict[str, QCheckBox] = {}
         for key, label in (
             ("data", "Data"),
             ("fit", "Fit"),
-            ("theory", "Theorie"),
-            ("lin", "Linearisatie"),
+            ("theory", "Theory"),
+            ("lin", "Linearization"),
         ):
             cb = QCheckBox(label)
             cb.setChecked(True)
@@ -151,12 +150,12 @@ class CalibrationGraphPanel(QGroupBox):
 
         # ---- status ----
         self.status = QLabel(
-            "Upload een Excel of CSV met twee kolommen: dz1 (mm), I_m (V)."
+            "Upload an Excel or CSV with two columns: dz1 (mm), I_m (V)."
         )
         self.status.setStyleSheet("color: gray;")
         root.addWidget(self.status)
 
-        # ---- grafiek ----
+        # ---- graph ----
         self.figure = Figure(figsize=(7.2, 4.2))
         self.canvas = FigureCanvas(self.figure)
         self.toolbar = NavigationToolbar(self.canvas, self)
@@ -173,31 +172,31 @@ class CalibrationGraphPanel(QGroupBox):
         self.canvas.draw_idle()
 
     # -----------------------------------------------------------
-    #  Acties
+    #  Actions
     # -----------------------------------------------------------
 
     def _upload(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Kies meetbestand", "", "Meetdata (*.xlsx *.xls *.csv)"
+            self, "Choose measurement file", "", "Measurement data (*.xlsx *.xls *.csv)"
         )
         if not path:
             return
         try:
             x, y = _load_xy(Path(path))
-        except Exception as e:  # pragma: no cover - bestandsfout-pad
-            self._error(f"Kon bestand niet inlezen: {e}")
+        except Exception as e:  # pragma: no cover - file-error path
+            self._error(f"Could not read file: {e}")
             return
         if x.size < 2:
-            self._error("Te weinig datapunten (minstens 2 nodig).")
+            self._error("Too few data points (at least 2 needed).")
             return
         self._dz1, self._Im, self._loaded_name = x, y, Path(path).name
         self._src_path = Path(path)
         self._last_res = None
         self._last_lin = None
         self.fit_btn.setEnabled(True)
-        self.save_btn.setEnabled(False)   # eerst fitten, dan pas opslaan
+        self.save_btn.setEnabled(False)   # fit first, then save
         self.status.setText(
-            f"Geladen: {self._loaded_name} ({x.size} punten). Klik 'Fit & toon'."
+            f"Loaded: {self._loaded_name} ({x.size} points). Click 'Fit & show'."
         )
         self.status.setStyleSheet("color: green;")
 
@@ -210,7 +209,7 @@ class CalibrationGraphPanel(QGroupBox):
             lin = ml.linearize_midpoint(self._dz1, self._Im)
         except Exception as e:
             self.unsetCursor()
-            self._error(f"Fit mislukt: {e}")
+            self._error(f"Fit failed: {e}")
             return
         self.unsetCursor()
         self._last_res = res
@@ -234,12 +233,12 @@ class CalibrationGraphPanel(QGroupBox):
                                  label=f"Fit (q={res.q:.2f}, r0={res.r0:.3f})")
         theory_line, = self.ax.plot(
             x, y_theory, color="green", ls="--", lw=2,
-            label=f"Theorie (q={ml.q_theory}, r0={ml.r0_theory})")
-        # Linearisatie-overlay: band-arcering + rechte a*x + b. De lijn wordt
-        # doorgetrokken tot de band-grenzen (y = lo en y = hi): uit y = a*x + b
-        # volgt x = (y - b) / a. Bij a≈0 valt dat terug op het dz1-bereik.
+            label=f"Theory (q={ml.q_theory}, r0={ml.r0_theory})")
+        # Linearization overlay: shaded band + straight a*x + b. The line is drawn
+        # up to the band edges (y = lo and y = hi): from y = a*x + b it follows that
+        # x = (y - b) / a. When a is near 0 it falls back to the dz1 range.
         band = self.ax.axhspan(lin.lo, lin.hi, color="orange", alpha=0.08,
-                               label="Linearisatieband")
+                               label="Linearization band")
         if abs(lin.a) > 1e-12:
             x_lo, x_hi = (lin.lo - lin.b) / lin.a, (lin.hi - lin.b) / lin.a
         else:
@@ -247,10 +246,10 @@ class CalibrationGraphPanel(QGroupBox):
         xs = np.linspace(x_lo, x_hi, 100)
         lin_line, = self.ax.plot(
             xs, lin.a * xs + lin.b, color="purple", lw=2,
-            label=f"Linearisatie (a={lin.a:.3f}, b={lin.b:.3f})")
+            label=f"Linearization (a={lin.a:.3f}, b={lin.b:.3f})")
         half = self.ax.axhline(res.I0 / 2, color="gray", ls=":", lw=1)
 
-        # Groepeer artists per toggle-laag; I0/2-referentie hangt aan 'lin'.
+        # Group artists per toggle layer; the I0/2 reference hangs on 'lin'.
         self._artists = {
             "data": [sc],
             "fit": [fit_line],
@@ -260,9 +259,9 @@ class CalibrationGraphPanel(QGroupBox):
 
         self.ax.set_xlabel("dz1 (mm)")
         self.ax.set_ylabel("I_m (V)")
-        self.ax.set_title(f"Confocaal model — {self._loaded_name}")
+        self.ax.set_title(f"Confocal model — {self._loaded_name}")
         self.ax.grid(True, alpha=0.3)
-        self._apply_visibility()   # zet zichtbaarheid + legenda, tekent canvas
+        self._apply_visibility()   # sets visibility + legend, draws the canvas
         self.figure.tight_layout()
         self.canvas.draw_idle()
 
@@ -275,11 +274,10 @@ class CalibrationGraphPanel(QGroupBox):
         self.status.setStyleSheet("color: green;")
 
     def _apply_visibility(self) -> None:
-        """Zet de zichtbaarheid van elke grafiek-laag op zijn toggle-stand.
+        """Set each graph layer's visibility to its toggle state.
 
-        Wordt zowel na een nieuwe fit als bij elke checkbox-wijziging aangeroepen,
-        zodat lagen live aan/uit gaan. De legenda wordt opnieuw opgebouwd uit
-        alleen de zichtbare, gelabelde artists.
+        Called both after a new fit and on every checkbox change so layers go
+        on/off live. The legend is rebuilt from only the visible, labelled artists.
         """
         if not self._artists:
             return
@@ -299,7 +297,7 @@ class CalibrationGraphPanel(QGroupBox):
         self.canvas.draw_idle()
 
     def _save(self) -> None:
-        """Sla Excel-kopie, grafiek (PNG) en fit-resultaten op in data/."""
+        """Save the Excel copy, graph (PNG) and fit results in data/."""
         if self._last_res is None or self._src_path is None or self._dz1 is None:
             return
         res = self._last_res
@@ -311,33 +309,42 @@ class CalibrationGraphPanel(QGroupBox):
             shutil.copy2(self._src_path, out_dir / self._src_path.name)
             self.figure.savefig(out_dir / "fit.png", dpi=150)
             text = (
-                f"bron: {self._src_path.name}\n"
-                f"datapunten: {self._dz1.size}\n"
+                f"source: {self._src_path.name}\n"
+                f"data points: {self._dz1.size}\n"
                 f"f1: {res.f1:.1f} mm\n"
                 f"f2: {res.f2:.1f} mm\n"
                 f"L: {res.L:.1f} mm\n"
                 f"r_d: {res.r_d:.3f} mm\n"
-                f"q (geleerd): {res.q:.4f} mm\n"
-                f"r0 (geleerd): {res.r0:.4f} mm\n"
-                f"I0 (max meting): {res.I0:.4f} V\n"
+                f"q (learned): {res.q:.4f} mm\n"
+                f"r0 (learned): {res.r0:.4f} mm\n"
+                f"I0 (measurement max): {res.I0:.4f} V\n"
                 f"R^2: {res.R2:.4f}\n"
                 f"RMSE: {res.RMSE:.4f} V\n"
             )
             lin = self._last_lin
             if lin is not None:
                 text += (
-                    "\n--- linearisatie rond I0/2 (a*x + b) ---\n"
-                    f"linearisatie a (V/mm): {lin.a:.6f}\n"
-                    f"linearisatie b (V): {lin.b:.6f}\n"
+                    "\n--- linearization around I0/2 (a*x + b) ---\n"
+                    f"linearization a (V/mm): {lin.a:.6f}\n"
+                    f"linearization b (V): {lin.b:.6f}\n"
                     f"band lo (V): {lin.lo:.4f}   band hi (V): {lin.hi:.4f}\n"
-                    f"punten in band: {lin.n}   R^2 (lijn): {lin.R2:.4f}\n"
+                    f"points in band: {lin.n}   R^2 (line): {lin.R2:.4f}\n"
                 )
-            (out_dir / "resultaten.txt").write_text(text, encoding="utf-8")
+            (out_dir / "results.txt").write_text(text, encoding="utf-8")
         except OSError as e:
-            self._error(f"Opslaan mislukt: {e}")
+            self._error(f"Save failed: {e}")
             return
-        self.status.setText(f"Opgeslagen → {out_dir}")
+        self.status.setText(f"Saved -> {out_dir}")
         self.status.setStyleSheet("color: green;")
+
+    def get_linearization(self) -> "ml.LinearizationResult | None":
+        """Return the most recent linearization (line a*x + b around I0/2), or None.
+
+        Used by the manual tab to convert burst voltage to displacement and to
+        check whether the measured voltage stays inside the linear band. Returns
+        None until a calibration graph has been fitted in this session.
+        """
+        return self._last_lin
 
     def _error(self, msg: str) -> None:
         self.status.setText(msg)

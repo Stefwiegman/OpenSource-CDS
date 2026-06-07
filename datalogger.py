@@ -1,23 +1,23 @@
 # SPDX-License-Identifier: MIT
 
-"""MokuDatalogger wrapper voor burst-acquisitie per scan-punt.
+"""MokuDatalogger wrapper for burst acquisition per scan point.
 
-Wordt gebruikt door MokuPanel.acquire_burst() in ui.py. Standalone testbaar:
+Used by MokuPanel.acquire_burst() in ui.py. Testable standalone:
 
     from datalogger import MokuDatalogger, voltage_to_dz1
-    with MokuDatalogger("192.168.73.1", 1, "10Vpp", "DC") as dl:
+    with MokuDatalogger("192.168.73.1", 1, "50Vpp", "DC") as dl:
         voltage = dl.acquire_burst(fs=100_000, duration_s=0.5)
-    dz1_mm = voltage_to_dz1(voltage, I0=2.5)   # optioneel: V → verplaatsing
+    dz1_mm = voltage_to_dz1(voltage, I0=2.5)   # optional: V -> displacement
 
-Werkt in streaming-mode: Moku stuurt continu samples over het netwerk, wij
-verzamelen ze in-memory tot de gevraagde duur is bereikt. Voor sample-rates
-boven ~500 kSa/s moet je naar file-mode overstappen (zie .start_logging).
+Works in streaming mode: the Moku sends samples continuously over the network and
+we collect them in memory until the requested duration is reached. For sample
+rates above ~500 kSa/s you have to switch to file mode (see .start_logging).
 
 Output:
-    acquire_burst() geeft ALTIJD ruwe voltage in V terug (1D float64 array).
-    De omrekening naar verplaatsing dz1 (mm) gebeurt in de schrijf-laag
-    (recording.py / scan.py) via voltage_to_dz1(), zodat de ruwe meetdata
-    altijd bewaard blijft.
+    acquire_burst() ALWAYS returns raw voltage in V (1D float64 array).
+    The conversion to displacement dz1 (mm) happens in the write layer
+    (recording.py / scan.py) via voltage_to_dz1(), so the raw measurement data
+    is always preserved.
 """
 from __future__ import annotations
 
@@ -28,12 +28,12 @@ import numpy as np
 
 def voltage_to_dz1(voltage: np.ndarray, I0: float,
                    f1: float | None = None) -> np.ndarray:
-    """Zet fotodetector-spanning (V) om naar verplaatsing dz1 (mm) via formule A6.
+    """Convert photodetector voltage (V) to displacement dz1 (mm) via formula A6.
 
-    Gebruikt de dz1_minus tak van A6 en klipt op 0 < I_m < I0 zodat de inversie
-    altijd gedefinieerd is (AC-coupling/ruis kan incidenteel buiten de range vallen).
+    Uses the dz1_minus branch of A6 and clips to 0 < I_m < I0 so the inversion is
+    always defined (AC coupling/noise can occasionally fall outside the range).
 
-    f1 is de brandpuntsafstand van lens 1 (mm); None → confocal-default.
+    f1 is the focal length of lens 1 (mm); None -> confocal default.
     """
     from confocal import compute_q, compute_dz1, f1 as f1_default
     v = np.asarray(voltage, dtype=np.float64)
@@ -46,7 +46,7 @@ def voltage_to_dz1(voltage: np.ndarray, I0: float,
 
 
 class MokuDatalogger:
-    """Synchrone burst-acquisitie via moku.instruments.Datalogger."""
+    """Synchronous burst acquisition via moku.instruments.Datalogger."""
 
     def __init__(self, address: str, channel: int,
                  range_: str, coupling: str,
@@ -89,9 +89,9 @@ class MokuDatalogger:
         self.close()
 
     def acquire_burst(self, fs: int, duration_s: float) -> np.ndarray:
-        """Doe één burst en retourneer een 1D float64-array van fs×T samples."""
+        """Take one burst and return a 1D float64 array of fs x T samples."""
         if self._dl is None:
-            raise RuntimeError("Datalogger niet open — roep .open() of gebruik 'with'.")
+            raise RuntimeError("Datalogger not open, call .open() or use 'with'.")
 
         self._dl.set_samplerate(int(fs))
         self._dl.start_streaming(duration=float(duration_s))
@@ -124,10 +124,10 @@ class MokuDatalogger:
 
         if not samples:
             raise RuntimeError(
-                "Datalogger gaf 0 samples terug — check sample-rate, kanaal en verbinding."
+                "Datalogger returned 0 samples, check sample rate, channel and connection."
             )
 
         voltage = np.asarray(samples[:target_n] if target_n else samples,
                              dtype=np.float64)
-        # Altijd ruwe voltage — conversie naar dz1 gebeurt in de schrijf-laag.
+        # Always raw voltage, conversion to dz1 happens in the write layer.
         return voltage

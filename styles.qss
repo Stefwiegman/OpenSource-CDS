@@ -191,7 +191,7 @@ QPushButton#TopBarAction {
     font-size: 12px;
 }
 
-/* ETA-kaart in scan-tab — prominent display van schatting */
+/* ETA card in scan tab, prominent display of the estimate */
 QLabel#EtaCard {
     background-color: #1c2230;
     border: 1px solid #303843;
@@ -203,7 +203,7 @@ QLabel#EtaCard {
     font-family: "Inter", "Segoe UI", system-ui, sans-serif;
 }
 
-/* jog-knoppen (▲ / ▼) — dikkere border + grotere arrow-glyph */
+/* jog buttons (▲ / ▼), thicker border + larger arrow glyph */
 QPushButton#JogButton {
     background-color: #1c2230;
     color: #e6edf3;
@@ -389,7 +389,7 @@ QGroupBox::title {
     color: #e6edf3;
 }
 
-/* Compacte panels (lamp binnen/buiten) — minder verticale ruimte */
+/* Compact panels (inner/outer lamp), less vertical space */
 QGroupBox[compact="true"] {
     margin-top: 10px;
     padding: 14px 14px 12px 14px;
@@ -400,7 +400,7 @@ QGroupBox[compact="true"]::title {
     padding: 0 6px;
 }
 
-/* In-tab panels: tab-naam dient als titel — verwijder QGroupBox-frame en title-ruimte */
+/* In-tab panels: the tab name serves as the title, remove the QGroupBox frame and title space */
 QGroupBox[inTab="true"] {
     background-color: transparent;
     border: none;
