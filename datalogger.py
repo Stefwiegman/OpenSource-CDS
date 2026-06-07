@@ -4,20 +4,18 @@
 
 Used by MokuPanel.acquire_burst() in ui.py. Testable standalone:
 
-    from datalogger import MokuDatalogger, voltage_to_dz1
+    from datalogger import MokuDatalogger
     with MokuDatalogger("192.168.73.1", 1, "50Vpp", "DC") as dl:
         voltage = dl.acquire_burst(fs=100_000, duration_s=0.5)
-    dz1_mm = voltage_to_dz1(voltage, I0=2.5)   # optional: V -> displacement
 
 Works in streaming mode: the Moku sends samples continuously over the network and
 we collect them in memory until the requested duration is reached. For sample
 rates above ~500 kSa/s you have to switch to file mode (see .start_logging).
 
 Output:
-    acquire_burst() ALWAYS returns raw voltage in V (1D float64 array).
-    The conversion to displacement dz1 (mm) happens in the write layer
-    (recording.py / scan.py) via voltage_to_dz1(), so the raw measurement data
-    is always preserved.
+    acquire_burst() returns raw voltage in V (1D float64 array). The conversion
+    to displacement dz1 (mm) happens in the write layer (recording.py) via the
+    linearized calibration line, so the raw measurement data is always preserved.
 """
 from __future__ import annotations
 
@@ -26,36 +24,15 @@ import time
 import numpy as np
 
 
-def voltage_to_dz1(voltage: np.ndarray, I0: float,
-                   f1: float | None = None) -> np.ndarray:
-    """Convert photodetector voltage (V) to displacement dz1 (mm) via formula A6.
-
-    Uses the dz1_minus branch of A6 and clips to 0 < I_m < I0 so the inversion is
-    always defined (AC coupling/noise can occasionally fall outside the range).
-
-    f1 is the focal length of lens 1 (mm); None -> confocal default.
-    """
-    from confocal import compute_q, compute_dz1, f1 as f1_default
-    v = np.asarray(voltage, dtype=np.float64)
-    eps = 1e-9
-    Im = np.clip(v, eps, I0 - eps)
-    f1_val = f1_default if f1 is None else float(f1)
-    q = compute_q(f1=f1_val)
-    dz1_minus, _ = compute_dz1(Im, q, f1=f1_val, I0=I0)
-    return dz1_minus
-
-
 class MokuDatalogger:
     """Synchronous burst acquisition via moku.instruments.Datalogger."""
 
     def __init__(self, address: str, channel: int,
-                 range_: str, coupling: str,
-                 I0: float | None = None) -> None:
+                 range_: str, coupling: str) -> None:
         self.address = address
         self.channel = channel
         self.range_ = range_
         self.coupling = coupling
-        self.I0 = I0
         self._dl = None
 
     def open(self) -> None:

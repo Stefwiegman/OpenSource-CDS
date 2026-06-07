@@ -777,8 +777,6 @@ class MokuPanel(QGroupBox):
         self._timebase = MOKU_DEFAULT_TIMEBASE
         self._burst_dl = None
         self._burst_cfg: tuple[str, int, str, str] | None = None
-        self.I0: float | None = None      # baseline voltage for V->dz1 conversion
-                                          # (entered manually in the Manual tab)
 
         layout = QVBoxLayout(self)
 
@@ -916,7 +914,7 @@ class MokuPanel(QGroupBox):
         self.status.setStyleSheet("color: #b8860b;")
 
         from datalogger import MokuDatalogger
-        self._burst_dl = MokuDatalogger(address, channel, range_, coupling, I0=self.I0)
+        self._burst_dl = MokuDatalogger(address, channel, range_, coupling)
         try:
             self._burst_dl.open()
         except Exception:
