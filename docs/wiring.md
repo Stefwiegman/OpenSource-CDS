@@ -1,7 +1,7 @@
 # Wiring Guide
 
 > Full pin-out and electrical connection reference for the confocal displacement sensor.
-> Pair with the [BOM](bom.md) for part numbers and the [assembly video](../README.md#-project-hub) for visual reference.
+> Pair with the [BOM](OpenSource_CDS_BOM.xlsx) for part numbers and the [assembly video](../README.md#-project-hub) for visual reference.
 
 > 🚧 **Status:** Skeleton, diagram and photos to be added.
 

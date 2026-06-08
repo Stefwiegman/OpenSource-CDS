@@ -371,7 +371,7 @@ nog step->mm-kalibratie, betere optische uitlijning en fijnere actuatie.
    confocale verplaatsingsmeting en MEMS-trillingen (nog niet in de repo aanwezig; geen `.tex`/`.bib`).
 4. **Mechanische speling/hysterese** kwantificeren (heen-en-terug-meting): dit is de resterende
    positioneringsonzekerheid nu het bewegingsbereik bekend is (+-500 um X/Y, +-300 um Z).
-5. **Bouwkosten** (BOM-totaal in `docs/bom.xlsx`) voor de "betaalbaar"-claim in Introduction.
+5. **Bouwkosten** (BOM-totaal in `docs/OpenSource_CDS_BOM.xlsx`) voor de "betaalbaar"-claim in Introduction.
 6. **r0/q-afwijking** verklaren: meet werkelijke bundelstraal en lensafstand L om de fit-versus-
    theorie-discrepantie te onderbouwen.
 7. **Welke f1 is de eindopstelling?** README zegt 25 mm, `confocal.py` default 40 mm; consistent maken.
@@ -387,5 +387,5 @@ nog step->mm-kalibratie, betere optische uitlijning en fijnere actuatie.
 - Software: `ui.py`, `recording.py`, `scan.py`, `datalogger.py`, `viewer.py`, `lamp.py`,
   `camera_settings.py`, `calibration.py`, `calibration.yaml`
 - Firmware: `arduino/firmware/firmware.ino`
-- Hardware/docs: `cad/` (38 STEP + `cad/README.md`), `docs/wiring.md`, `docs/use-guide.md`,
-  `docs/bom.xlsx`, `docs/print-guide.pdf`, `README.md`, `assets/MAIN_ASSEMBLY.png`
+- Hardware/docs: `cad/` (38 STEP + `cad/README.md`), `docs/wiring.md`, `docs/OpenSource_CDS_User_Guide.pptx`,
+  `docs/OpenSource_CDS_BOM.xlsx`, `docs/OpenSource_CDS_Printing_Guide.pdf`, `README.md`, `assets/MAIN_ASSEMBLY.png`

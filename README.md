@@ -12,7 +12,7 @@ Submission: **June 12th 2026**.
 
 **Team:** Dafne Gyselinck · Jayden Jhagru · Harmen Klerk · Ties van Lohuizen · Stef Wiegman
 
-> 🧱 **Built on top of the [OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/)** (CC BY-SA 4.0). We use the block stage **unmodified**: our confocal optics, stepper actuators, electronics housing, and software bolt onto it as a clip-on extension. If you already own an OpenFlexure Block Stage, you only need to print our additional parts. See [Built on top of](#-built-on-top-of) for details and attribution.
+> 🧱 **Built on top of the [OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/)** (CC BY-SA 4.0), used **unmodified** as our 3-axis flexure base. See [Built on top of](#-built-on-top-of) for what this means for builders, and for attribution.
 
 ---
 
@@ -26,9 +26,9 @@ Everything we made for this project lives behind one of these links.
 | 🎥 Assembly video | [YouTube](https://www.youtube.com/watch?v=UzMbLptgHZc) | Step-by-step build from printed parts and electronics to a working instrument |
 | 📐 CAD files | [`cad/`](cad/) | 38 STEP source files for every printed part of the confocal extension, grouped by category (BASE / BLOCKS / CALIBRATION) |
 | 🔧 Circuit diagram | [`docs/circuit-diagram.pdf`](docs/circuit-diagram.pdf) | Arduino pin-out, ULN2003 IN2/IN3-swap, power, Moku and camera connections (PDF, download to view) |
-| 🛒 Parts list (BOM) | [`docs/bom.xlsx`](docs/bom.xlsx) | Electronics, optics, mechanical hardware, quantities, suppliers, prices (Excel, download to view) |
-| 🖨️ 3D-print guide | [`docs/print-guide.pdf`](docs/print-guide.pdf) | Printer settings, per-part list with print times, filament estimates, tolerances |
-| 📖 Use guide | [`docs/use-guide.md`](docs/use-guide.md) | First-time setup, calibration, manual burst, analysis, troubleshooting |
+| 🛒 Parts list (BOM) | [`docs/OpenSource_CDS_BOM.xlsx`](docs/OpenSource_CDS_BOM.xlsx) | Electronics, optics, mechanical hardware, quantities, suppliers, prices (Excel, download to view) |
+| 🖨️ 3D-print guide | [`docs/OpenSource_CDS_Printing_Guide.pdf`](docs/OpenSource_CDS_Printing_Guide.pdf) | Printer settings, per-part list with print times, filament estimates, tolerances |
+| 📖 Use guide | [`docs/OpenSource_CDS_User_Guide.pptx`](docs/OpenSource_CDS_User_Guide.pptx) | First-time setup, calibration, manual burst, analysis, troubleshooting (PowerPoint, download to view) |
 | 🧱 Block stage origin | [openflexure.org/projects/blockstage](https://openflexure.org/projects/blockstage/) | Upstream open-hardware base, required reading before fabrication |
 | 💻 Source code | this repository | PySide6 desktop UI, Arduino firmware, burst pipeline, confocal physics model |
 
@@ -61,14 +61,14 @@ If terms below are new to you, this short table covers the rest of the README:
 | **I0** | Photodetector voltage at full reflection (the maximum of the calibration curve); the linear region sits around I0/2 |
 | **Calibration line** | A straight line `I_m = a·dz1 + b` fitted to the steep middle of the confocal curve; inverting it (`dz1 = (V - b) / a`) turns measured voltage into displacement |
 | **MEMS** | Micro-Electro-Mechanical Systems, micrometer-scale moving structures whose vibrations we characterise |
-| **Moku:Go** | Liquid Instruments' multifunction lab instrument; we use its Oscilloscope and Datalogger modes as our photodetector front-end |
+| **Moku:Go** | Liquid Instruments' multifunction lab instrument; it is the acquisition **back-end** that digitises the photodetector signal (Oscilloscope mode for live view, Datalogger mode for burst capture) |
 | **Flexure stage** | A stage that moves via elastic flexion of monolithic features instead of sliding bearings, sub-micron repeatable, see OpenFlexure |
 
 ### Pick your starting point
 
 - **Reading the paper?** Start with the [research paper](#-project-hub), then the [Hardware overview](#hardware-overview) for the optical setup.
-- **Building a copy?** Read [Built on top of](#-built-on-top-of) first, then open the [3D-print guide](docs/print-guide.pdf), [BOM](docs/bom.xlsx), [circuit diagram](docs/circuit-diagram.pdf), and watch the [assembly video](https://www.youtube.com/watch?v=UzMbLptgHZc).
-- **Running an existing instrument?** Jump to [Prerequisites](#prerequisites) and [Quickstart](#quickstart), then the [use guide](docs/use-guide.md).
+- **Building a copy?** Read [Built on top of](#-built-on-top-of) first, then open the [3D-print guide](docs/OpenSource_CDS_Printing_Guide.pdf), [BOM](docs/OpenSource_CDS_BOM.xlsx), [circuit diagram](docs/circuit-diagram.pdf), and watch the [assembly video](https://www.youtube.com/watch?v=UzMbLptgHZc).
+- **Running an existing instrument?** Jump to [Prerequisites](#prerequisites) and [Setup](#setup), then the [use guide](docs/OpenSource_CDS_User_Guide.pptx).
 - **Hacking the software?** See [Repository layout](#repository-layout).
 
 ---
@@ -84,13 +84,17 @@ Before the software will do anything useful, make sure you have:
 | **Arduino IDE** (or `arduino-cli`) | flash the Nano firmware once | open IDE, plug in Nano |
 | **Moku:Go** + Liquid Instruments account | photodetector readout | reachable at `192.168.73.1` after connecting to its Access-Point Wi-Fi or Ethernet |
 | **USB microscope camera** (UVC, ≥1080p) | live view of the sample on the Camera tab | the laptop's built-in webcam is never used; only an external camera is opened |
-| **Assembled hardware** | otherwise the UI starts but cannot measure | see [3D-print guide](docs/print-guide.pdf), [circuit diagram](docs/circuit-diagram.pdf), and the [assembly video](https://www.youtube.com/watch?v=UzMbLptgHZc) |
+| **Assembled hardware** | otherwise the UI starts but cannot measure | see [3D-print guide](docs/OpenSource_CDS_Printing_Guide.pdf), [circuit diagram](docs/circuit-diagram.pdf), and the [assembly video](https://www.youtube.com/watch?v=UzMbLptgHZc) |
 
-Estimated total build cost: <!-- TODO: fill in once BOM has prices -->, see [BOM](docs/bom.xlsx).
+Estimated total build cost: **≈ €1600**, dominated by the Moku:Go (≈ €689) and the optics (lens and red filter, listed as approximate prices); see the [BOM](docs/OpenSource_CDS_BOM.xlsx) for the full breakdown.
 
 ---
 
-## Quickstart
+## Setup
+
+This chapter takes you from a fresh clone to all three TopBar status pills (`Motors / Moku / Camera`) turning green. For operating the instrument afterwards (calibration, measuring, analysis) see the [use guide](docs/OpenSource_CDS_User_Guide.pptx).
+
+### 1. Clone and create a Python environment
 
 **Windows (PowerShell):**
 
@@ -99,8 +103,6 @@ git clone https://github.com/Stefwiegman/Bep-Project.git
 cd Bep-Project
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python ui.py
 ```
 
 **Linux / macOS (bash/zsh):**
@@ -110,19 +112,49 @@ git clone https://github.com/Stefwiegman/Bep-Project.git
 cd Bep-Project
 python3 -m venv .venv
 source .venv/bin/activate
+```
+
+### 2. Install dependencies
+
+```bash
 pip install -r requirements.txt
+```
+
+This pulls in the UI and pipeline stack: PySide6 (Qt UI), the `moku` client, NumPy/SciPy, OpenCV (camera), SymPy (confocal model), PyYAML (calibration persistence) and openpyxl (Excel import in the Calibration graph tab).
+
+### 3. Flash the Arduino firmware (one-time)
+
+The stage motors and lamp are driven by an Arduino Nano. Flash it once with the Arduino IDE (or `arduino-cli`):
+
+1. Open `arduino/firmware/firmware.ino`.
+2. Install the required libraries via the Library Manager: **AccelStepper** and **Adafruit NeoPixel**.
+3. Select board **Arduino Nano** and the correct COM-port, then **Upload**.
+
+Note the port the Nano enumerates on, you pick it in the app later (the defaults assume `COM4`). Wiring, including the ULN2003 IN2/IN3 swap, is in the [wiring guide](docs/wiring.md).
+
+### 4. Connect the Moku:Go
+
+Connect the Moku:Go over Ethernet or join its Wi-Fi Access Point. Put your PC's network adapter on the same subnet (`192.168.73.x`) and confirm the device responds:
+
+```bash
+ping 192.168.73.1
+```
+
+### 5. Connect the microscope camera
+
+Plug in the external USB microscope camera (UVC, ≥1080p). The laptop's built-in webcam (index 0) is never opened, so it stays off until a microscope camera is connected on index 1+.
+
+### 6. Launch and connect
+
+```bash
 python ui.py
 ```
 
-**First-run checklist:**
-
-1. Flash `arduino/firmware/firmware.ino` to your Arduino Nano (one-time, use the Arduino IDE)
-2. Connect Moku:Go (Ethernet or its Wi-Fi Access Point), default IP `192.168.73.1`
-3. Plug in the USB microscope camera (the laptop's built-in webcam stays off)
-4. Launch `python ui.py` → open the **Setup** tab → pick your COM-port → click **Connect**
-5. Pills `Motors / Moku / Camera` in the TopBar should all turn green
+In the app, open the **Setup tab**, pick your Arduino COM-port and click **Connect**. The TopBar pills `Motors / Moku / Camera` should all turn green. If one stays red, see the troubleshooting section of the [use guide](docs/OpenSource_CDS_User_Guide.pptx).
 
 **Defaults:** Arduino on `COM4 @ 9600 baud`, Moku at `192.168.73.1` (50 Vpp range), external microscope camera auto-detected (MJPG @ 1080p/30 fps). The laptop's built-in webcam (index 0) is never opened.
+
+With all pills green, continue in the [use guide](docs/OpenSource_CDS_User_Guide.pptx) to calibrate, set the I0 reference, and record measurements.
 
 ---
 
@@ -136,23 +168,13 @@ python ui.py
 | **Photodetector** | Moku:Go (Oscilloscope mode for live view, Datalogger mode for burst capture), IP `192.168.73.1`, 50 Vpp range |
 | **Camera** | External USB microscope camera, auto-detected on indices 1+, MJPG @ 1080p / 30 fps. The laptop's built-in webcam (index 0) is never opened, so it stays off until a microscope camera is connected. |
 
-Full pin-out, schematic and connector list → [`docs/circuit-diagram.pdf`](docs/circuit-diagram.pdf). Parts and suppliers → [`docs/bom.xlsx`](docs/bom.xlsx). 3D-print files and settings → [`docs/print-guide.pdf`](docs/print-guide.pdf).
+Full pin-out, schematic and connector list → [`docs/circuit-diagram.pdf`](docs/circuit-diagram.pdf). Parts and suppliers → [`docs/OpenSource_CDS_BOM.xlsx`](docs/OpenSource_CDS_BOM.xlsx). 3D-print files and settings → [`docs/OpenSource_CDS_Printing_Guide.pdf`](docs/OpenSource_CDS_Printing_Guide.pdf).
 
 ---
 
 ## UI layout
 
-```
-┌─ TopBar: brand · [Motors][Moku][Camera] status pills · Restore position · ? ─┐
-├──────────────────────────────┬─────────────────────────────────────────────┤
-│  Camera feed (● LIVE)        │  Tabs: Manual │ Calibration graph │ Setup │  │
-│  (OFFLINE until connected)   │        Camera (+ inner/outer lamp controls) │
-├──────────────────────────────┴─────────────────────────────────────────────┤
-│  Moku:Go photodetector, live voltage(t) plot                              │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-<!-- TODO: replace the ASCII box above with a real UI screenshot once available. Save as `assets/ui-scanning.png` and reference it here. -->
+![Confocal Displacement Sensor UI: TopBar status pills, camera feed (OFFLINE until connected), the Calibration graph tab with the fitted confocal model, and the live Moku:Go photodetector plot](assets/ui-scanning.png)
 
 | Tab | What it does |
 |---|---|
@@ -161,7 +183,7 @@ Full pin-out, schematic and connector list → [`docs/circuit-diagram.pdf`](docs
 | **Setup** | Connect, jog in exact micron steps, soft-home ("Set 0 here"), set speed, restore the last saved position. |
 | **Camera** | Exposure, brightness, contrast, auto-exposure, grayscale, plus the inner and outer lamp brightness controls. |
 
-Step-by-step operating instructions → [`docs/use-guide.md`](docs/use-guide.md).
+Step-by-step operating instructions → [`docs/OpenSource_CDS_User_Guide.pptx`](docs/OpenSource_CDS_User_Guide.pptx).
 
 ---
 
@@ -252,8 +274,8 @@ This project combines our own software with hardware derived from an open-hardwa
 |---|---|---|
 | **Software** (Python, Arduino firmware, Qt stylesheets) | **MIT** | [`LICENSE`](LICENSE) |
 | **Hardware / CAD** (3D-print files, STEP/STL release) | **CC BY-SA 4.0** | [`LICENSE.hardware`](LICENSE.hardware) |
-| **Documentation** (this README, `docs/*.md`, research paper) | **CC BY-SA 4.0** | [`LICENSE.hardware`](LICENSE.hardware) |
+| **Documentation** (this README, `docs/`, research paper) | **CC BY-SA 4.0** | [`LICENSE.hardware`](LICENSE.hardware) |
 
-The hardware uses CC BY-SA 4.0 to match the upstream [OpenFlexure Block Stage](#-built-on-top-of) and keep the open-hardware chain intact. Because we use the block stage unmodified and our parts are an attachment rather than a fork, the share-alike clause may not strictly bind us, but we voluntarily match the upstream licence. Documentation travels with hardware so it uses the same licence. The software is independent and uses the permissive MIT licence.
+The hardware and documentation use CC BY-SA 4.0 to match the upstream [OpenFlexure Block Stage](#-built-on-top-of); the software is independent and uses the permissive MIT licence. See [Built on top of](#-built-on-top-of) for the rationale.
 
 Copyright held jointly by the BEP team (Dafne Gyselinck, Jayden Jhagru, Harmen Klerk, Ties van Lohuizen, Stef Wiegman), 2026.

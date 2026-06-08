@@ -25,7 +25,7 @@ This folder contains **only** our confocal extension parts. The 3-axis flexure s
 ## How to print
 
 1. Open the relevant `.step` file in your slicer (Cura, PrusaSlicer, OrcaSlicer)
-2. Apply the recommended settings from [`../docs/print-guide.pdf`](../docs/print-guide.pdf)
+2. Apply the recommended settings from [`../docs/OpenSource_CDS_Printing_Guide.pdf`](../docs/OpenSource_CDS_Printing_Guide.pdf)
 3. Print, post-process, and assemble per the [assembly video](https://www.youtube.com/watch?v=UzMbLptgHZc)
 
 ## How to modify
