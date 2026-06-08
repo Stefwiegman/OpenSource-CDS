@@ -19,6 +19,7 @@ env/
 data/
 calibration.yaml
 scan_presets.yaml
+confocal_fits.yaml
 
 # Gridsearch-output (regenereerbaar)
 gridsearch_results.csv

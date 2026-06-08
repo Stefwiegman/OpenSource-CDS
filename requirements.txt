@@ -5,5 +5,6 @@ pyyaml
 moku
 pandas
 opencv-python
+pygrabber
 PySide6
 pyserial

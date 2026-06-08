@@ -33,6 +33,7 @@ import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDialog,
     QGridLayout,
     QGroupBox,
@@ -166,25 +167,34 @@ class RecordingPanel(QGroupBox):
         self.open_btn.setEnabled(False)
         layout.addWidget(self.open_btn, 2, 2, 1, 2)
 
+        # ---- Show-FFT toggle (decide before the burst) ----
+        self.show_fft_cb = QCheckBox("Show FFT plot after burst")
+        self.show_fft_cb.setChecked(True)
+        self.show_fft_cb.setToolTip(
+            "When on, the FFT spectrum pops up after each burst.\n"
+            "fft.png is always saved in the run folder either way."
+        )
+        layout.addWidget(self.show_fft_cb, 3, 0, 1, 4)
+
         # ---- Status ----
         self.status = QLabel("Ready, click 'Burst' to take one measurement.")
         self.status.setStyleSheet("color: gray;")
         self.status.setWordWrap(True)
-        layout.addWidget(self.status, 3, 0, 1, 4)
+        layout.addWidget(self.status, 4, 0, 1, 4)
 
         # ---- Recent runs ----
         runs_lbl = QLabel("Recent runs")
         runs_lbl.setProperty("role", "caption")
-        layout.addWidget(runs_lbl, 4, 0, 1, 4)
+        layout.addWidget(runs_lbl, 5, 0, 1, 4)
 
         self.runs_list = QListWidget()
         self.runs_list.setToolTip("Double-click to open the folder")
         self.runs_list.itemDoubleClicked.connect(self._open_run_folder)
-        layout.addWidget(self.runs_list, 5, 0, 1, 4)
+        layout.addWidget(self.runs_list, 6, 0, 1, 4)
 
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(3, 1)
-        layout.setRowStretch(5, 1)
+        layout.setRowStretch(6, 1)
 
         self._refresh_runs()
 
@@ -308,19 +318,27 @@ class RecordingPanel(QGroupBox):
         )
 
     def _show_fft(self, samples: np.ndarray, fs_hz: int, run_dir: Path, lin) -> None:
-        """Compute the dz1 amplitude spectrum, save fft.png and show the popup."""
+        """Compute the dz1 amplitude spectrum, save fft.png, show popup if enabled.
+
+        fft.png is always written to the run folder; the 'Show FFT plot after
+        burst' checkbox only controls whether the popup window appears.
+        """
         dz1_um = self._dz1_mm_from_voltage(samples, lin) * 1000.0   # mm -> µm
         freqs, amp = amplitude_spectrum(dz1_um, fs_hz)
         if freqs.size == 0:
             return
-        if self._fft_window is not None:
-            self._fft_window.close()
-        self._fft_window = FFTWindow(freqs, amp, run_dir.name, parent=self)
+        win = FFTWindow(freqs, amp, run_dir.name, parent=self)
         try:
-            self._fft_window.figure.savefig(run_dir / "fft.png", dpi=150)
+            win.figure.savefig(run_dir / "fft.png", dpi=150)
         except OSError as e:
             self.status.setText(f"{self.status.text()}\n   (fft.png not saved: {e})")
-        self._fft_window.show()
+        if not self.show_fft_cb.isChecked():
+            win.deleteLater()   # fft.png saved, but no popup requested
+            return
+        if self._fft_window is not None:
+            self._fft_window.close()
+        self._fft_window = win
+        win.show()
 
     def _save_burst(self, samples: np.ndarray, fs_hz: int, lin, n_out: int) -> Path:
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

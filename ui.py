@@ -56,11 +56,18 @@ from lamp import LampPanel
 from recording import RecordingPanel
 
 
-# The laptop's built-in webcam is index 0 and is never opened, so it stays off.
-LAPTOP_CAMERA_INDEX = 0
-# OpenCV / DirectShow indices to probe for the external microscope camera.
-# Whichever of these opens first and delivers a frame is used as the feed.
-MICROSCOPE_CAMERA_INDICES = (1, 2, 3)
+# The microscope camera is matched by NAME, not by index, because the OpenCV /
+# DirectShow index depends on USB enumeration order (which varies per machine and
+# plug order). On this setup the microscope is "Innomaker-U20CAM-1080p-S1" and
+# the laptop built-in is "HP HD Camera", but the indices can swap.
+# INCLUDE patterns positively identify the microscope; EXCLUDE patterns are
+# cameras we must never open (laptop built-in, virtual cameras). Matching is
+# case-insensitive substring.
+MICROSCOPE_NAME_INCLUDE = ("innomaker", "u20cam", "usb cam", "usb video", "microscope")
+CAMERA_NAME_EXCLUDE = ("hp hd camera", "hp truevision", "integrated", "obs", "virtual")
+# Last-resort indices to probe only when device names cannot be read (pygrabber
+# missing). Name-based detection is strongly preferred.
+MICROSCOPE_CAMERA_INDICES = (0, 1, 2, 3)
 
 DEFAULT_PORT = "COM4"
 BAUD = 9600
@@ -81,15 +88,16 @@ AXIS_LIMIT_UM = (500.0, 500.0, 500.0)
 class CameraThread(QThread):
     """Streams the external microscope camera.
 
-    The laptop's built-in webcam (index LAPTOP_CAMERA_INDEX) is intentionally
-    never opened so it stays off. This thread keeps scanning
-    MICROSCOPE_CAMERA_INDICES and only starts streaming once a microscope camera
-    is connected. If the camera is unplugged it drops back to scanning.
+    The microscope camera is identified by device name (see MICROSCOPE_NAME_INCLUDE
+    / CAMERA_NAME_EXCLUDE), so the laptop's built-in webcam and virtual cameras are
+    never opened regardless of their index. The thread keeps scanning until a
+    microscope camera is connected and only then starts streaming; if it is
+    unplugged the thread drops back to scanning.
     """
 
     frame_ready = Signal(np.ndarray)
-    camera_connected = Signal(int)   # emitted with the index when streaming starts
-    camera_lost = Signal()           # emitted when the camera disconnects
+    camera_connected = Signal(int, str)   # (index, device name) when streaming starts
+    camera_lost = Signal()                # emitted when the camera disconnects
 
     def __init__(self, indices: tuple[int, ...] = MICROSCOPE_CAMERA_INDICES) -> None:
         super().__init__()
@@ -104,22 +112,64 @@ class CameraThread(QThread):
     def run(self) -> None:
         self._running = True
         while self._running:
-            cap, index = self._open_microscope_camera()
+            cap, index, name = self._open_microscope_camera()
             if cap is None:
                 # No microscope camera yet. Wait and rescan; laptop cam stays off.
                 self._sleep(1.5)
                 continue
-            self.camera_connected.emit(index)
+            self.camera_connected.emit(index, name)
             self._stream(cap)
             cap.release()
             if self._running:
                 self.camera_lost.emit()
 
+    @staticmethod
+    def _enumerate_cameras() -> list[str] | None:
+        """Return DirectShow camera names (same order as OpenCV indices), or None.
+
+        None means the names could not be read (pygrabber missing), so the caller
+        falls back to a plain index probe.
+        """
+        try:
+            from pygrabber.dshow_graph import FilterGraph
+            return list(FilterGraph().get_input_devices())
+        except Exception:
+            return None
+
+    @staticmethod
+    def _pick_microscope(names: list[str]) -> int:
+        """Pick the microscope camera index from device names; -1 if none suitable."""
+        # 1) a device positively identified as the microscope wins
+        for i, name in enumerate(names):
+            low = name.lower()
+            if any(p in low for p in MICROSCOPE_NAME_INCLUDE):
+                return i
+        # 2) otherwise the first camera that is not the laptop built-in or virtual
+        for i, name in enumerate(names):
+            low = name.lower()
+            if not any(p in low for p in CAMERA_NAME_EXCLUDE):
+                return i
+        return -1
+
     def _open_microscope_camera(self):
-        """Try every candidate index; return (cap, index) once one delivers a frame."""
-        for index in self._indices:
+        """Find and open the microscope camera. Returns (cap, index, name)."""
+        names = self._enumerate_cameras()
+        if names is not None:
+            idx = self._pick_microscope(names)
+            candidates = [] if idx < 0 else [idx]
+
+            def name_of(i: int) -> str:
+                return names[i] if 0 <= i < len(names) else f"USB{i}"
+        else:
+            # Names unavailable: last-resort index probe (cannot tell cameras apart).
+            candidates = list(self._indices)
+
+            def name_of(i: int) -> str:
+                return f"USB{i}"
+
+        for index in candidates:
             if not self._running:
-                return None, -1
+                return None, -1, ""
             cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
             if not cap.isOpened():
                 cap.release()
@@ -134,11 +184,11 @@ class CameraThread(QThread):
             if not ok:
                 cap.release()
                 continue
-            self._configure(cap, index)
-            return cap, index
-        return None, -1
+            self._configure(cap, index, name_of(index))
+            return cap, index, name_of(index)
+        return None, -1, ""
 
-    def _configure(self, cap, index: int) -> None:
+    def _configure(self, cap, index: int, name: str = "") -> None:
         """Tune the camera for maximum image quality."""
         # FOURCC before resolution: DirectShow refuses high resolutions on YUY2
         # (raw) over USB 2.0; with MJPG (compressed) 1080p@30 almost always works.
@@ -166,7 +216,9 @@ class CameraThread(QThread):
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
-        print(f"Microscope camera opened on index {index}: {w}x{h} @ {fps:.0f}fps (MJPG)")
+        label = name or f"index {index}"
+        print(f"Microscope camera opened: {label} (index {index}) "
+              f"{w}x{h} @ {fps:.0f}fps (MJPG)")
 
     def _stream(self, cap) -> None:
         """Read frames until stopped or the camera disconnects."""
@@ -1069,10 +1121,14 @@ class TopBar(QWidget):
         self._poll.start()
         self._refresh_pills()
 
-    def _on_camera_connected(self, index: int) -> None:
+    def _on_camera_connected(self, index: int, name: str = "") -> None:
         self._camera_connected = True
         self._camera_index = index
-        self.camera_pill.set_state(True, f"USB{index}")
+        # Show a short device name when available, else the USB index.
+        meta = (name or f"USB{index}")
+        if len(meta) > 22:
+            meta = meta[:21] + "…"
+        self.camera_pill.set_state(True, meta)
 
     def _on_camera_lost(self) -> None:
         self._camera_connected = False
@@ -1251,7 +1307,7 @@ class MainWindow(QMainWindow):
         self.camera_card = CameraCard(self.camera_panel)
 
         # Camera connect/disconnect drives the card badge and the panel message.
-        self.cam_thread.camera_connected.connect(lambda _i: self.camera_card.set_live(True))
+        self.cam_thread.camera_connected.connect(lambda *_: self.camera_card.set_live(True))
         self.cam_thread.camera_lost.connect(lambda: self.camera_card.set_live(False))
         self.cam_thread.camera_lost.connect(self.camera_panel.show_waiting)
 
