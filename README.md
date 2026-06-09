@@ -176,7 +176,7 @@ With all pills green, continue in the [use guide](docs/OpenSource_CDS_User_Guide
 | Subsystem | Details |
 |---|---|
 | **Stage** | **Unmodified [OpenFlexure Block Stage](https://openflexure.org/projects/blockstage/)** as the flexure base, with our 3× 28BYJ-48 stepper + ULN2003 driver actuators bolted on. Driven by an Arduino Nano (`COM4`, 9600 baud). Motor 1 = X, motor 2 = Y, motor 3 = Z (focus). |
-| **Optical column** | Two-lens confocal path (`f1 = 25 mm`, `f2 = 150 mm`), detector aperture (`r_d = 0.5 mm`), mounted vertically above the stage. Full derivation in the [research paper](#-project-hub), implementation in [`confocal.py`](confocal.py). |
+| **Optical column** | Two-lens confocal path: interchangeable F1 lens (16-80 mm, code default 40 mm) with a fixed `f2 = 150 mm`, detector aperture (`r_d = 0.5 mm`), mounted vertically above the stage. Full derivation in the [research paper](#-project-hub), implementation in [`confocal.py`](confocal.py). |
 | **Lamp** | Two WS2812B-8 LED rings (inner on Arduino pin A2, outer on pin A3), brightness controlled over the shared serial port |
 | **Photodetector** | Moku:Go (Oscilloscope mode for live view, Datalogger mode for burst capture), IP `192.168.73.1`, 50 Vpp range |
 | **Camera** | External USB microscope camera, auto-detected on indices 1+, MJPG @ 1080p / 30 fps. The laptop's built-in webcam (index 0) is never opened, so it stays off until a microscope camera is connected. |
