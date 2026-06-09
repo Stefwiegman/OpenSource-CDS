@@ -36,3 +36,6 @@ gridsearch_results.csv
 paper_overlay.py
 assets/overlay_predictions.png
 mockup.html
+
+# Geuploade archieven (inhoud wordt uitgepakt, de zip zelf niet committen)
+*.zip

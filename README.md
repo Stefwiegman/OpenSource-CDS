@@ -3,11 +3,11 @@
 > **Affordable confocal displacement measurement.**
 > *Confocal Displacements Sensing voor betaalbare verplaatsingsmetingen*
 
-![Confocal Displacement Sensor, CAD render of the assembled instrument](<p align="center">
+<p align="center">
   <img src="assets/MAIN_ASSEMBLY.png"
        alt="Confocal Displacement Sensor, CAD render of the assembled instrument"
        width="400">
-</p>)
+</p>
 
 ![Status](https://img.shields.io/badge/status-active-success) ![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![UI](https://img.shields.io/badge/UI-PySide6-41cd52) ![Hardware](https://img.shields.io/badge/hardware-Arduino%20Nano%20%2B%20Moku%3AGo-orange) ![Course](https://img.shields.io/badge/TU%20Delft-WBMT3BEP%20%C2%B7%20PME--2026--A06-00a6d6)
 
@@ -28,7 +28,7 @@ Everything we made for this project lives behind one of these links.
 |---|---|---|
 | 📄 Research paper | [🚧 TODO](#) <!-- TODO: paste paper URL (Overleaf share / PDF on Drive) --> | Theoretical background, confocal model derivation (appendix A), measurement results, discussion |
 | 🎥 Assembly video | [YouTube](https://www.youtube.com/watch?v=UzMbLptgHZc) | Step-by-step build from printed parts and electronics to a working instrument |
-| 📐 CAD files | [`cad/`](cad/) | 38 STEP source files for every printed part of the confocal extension, grouped by category (BASE / BLOCKS / CALIBRATION) |
+| 📐 CAD files | [`cad/`](cad/) | 51 STEP files (`cad/step/`) for the confocal extension, plus 6 STL of the OpenFlexure stage (`cad/stl/`), grouped by category (BASE / BLOCKS / CALIBRATION / STAGE) |
 | 🧩 Assembly viewer | [Onshape](https://cad.onshape.com/documents/87fafcc64806dd978cd8e8a6/w/b53780b5a9e32836df5ce22e/e/844e572a161a9db474edfe58) | Interactive 3D model of the full assembly: rotate and inspect in the browser, or export STEP / STL yourself |
 | 🔧 Circuit diagram | [`docs/circuit-diagram.pdf`](docs/circuit-diagram.pdf) | Arduino pin-out, ULN2003 IN2/IN3-swap, power, Moku and camera connections (PDF, download to view) |
 | 🛒 Parts list (BOM) | [`docs/OpenSource_CDS_BOM.xlsx`](docs/OpenSource_CDS_BOM.xlsx) | Electronics, optics, mechanical hardware, quantities, suppliers, prices (Excel, download to view) |
@@ -135,7 +135,7 @@ The stage motors and lamp are driven by an Arduino Nano. Flash it once with the 
 2. Install the required libraries via the Library Manager: **AccelStepper** and **Adafruit NeoPixel**.
 3. Select board **Arduino Nano** and the correct COM-port, then **Upload**.
 
-Note the port the Nano enumerates on, you pick it in the app later (the defaults assume `COM4`). Wiring, including the ULN2003 IN2/IN3 swap, is in the [wiring guide](docs/wiring.md).
+Note the port the Nano enumerates on, you pick it in the app later (the defaults assume `COM4`). Full wiring, including the ULN2003 IN2/IN3 swap, is in the [circuit diagram](docs/circuit-diagram.pdf).
 
 ### 4. Set up the Moku:Go (one-time)
 
@@ -244,7 +244,7 @@ This instrument uses the open-hardware **[OpenFlexure Block Stage](https://openf
 
 Two practical consequences:
 
-- **If you already own an OpenFlexure Block Stage**, you only need to print our additional confocal-extension parts and bolt them on. No re-print or modification of the stage itself.
+- **If you already own an OpenFlexure Block Stage**, you only need to print our confocal-extension parts ([`cad/step/`](cad/step/)) and bolt them on. **If you don't**, the stage is bundled as STL in [`cad/stl/`](cad/stl/) so you can print a complete instrument from this repo. Either way the stage is used without modification.
 - **The extension is reversible**: unbolt our parts and the block stage returns to its original state and original use cases (microscopy, etc.).
 
 Every part of our confocal setup is deliberately designed to be straightforward to modify for users with non-standard requirements (different optics, sample sizes, illumination, mounting).
@@ -256,7 +256,7 @@ Every part of our confocal setup is deliberately designed to be straightforward 
 | Confocal optical column (f1, f2, aperture, photodetector) | Our own design |
 | Software (UI, firmware, analysis, paper) | Our own work |
 
-**Licensing.** The OpenFlexure Block Stage is licensed under **CC BY-SA 4.0** (Attribution + ShareAlike). Because we use it unmodified, our extension parts are technically not a "derivative" of the stage's CAD. We still release our extension under **CC BY-SA 4.0** to keep the open-hardware chain intact and to match the upstream licence. Our software is independent and uses the permissive MIT licence (see [License](#license)).
+**Licensing.** The OpenFlexure Block Stage is licensed under **CC BY-SA 4.0** (Attribution + ShareAlike). Because we use it unmodified, our extension parts are technically not a "derivative" of the stage's CAD. We still release our extension under **CC BY-SA 4.0** to keep the open-hardware chain intact and to match the upstream licence. The stage STL bundled in [`cad/stl/`](cad/stl/) are the upstream OpenFlexure parts, redistributed unmodified under that same CC BY-SA 4.0 licence. Our software is independent and uses the permissive MIT licence (see [License](#license)).
 
 **Attribution.** When using or referencing this project's hardware:
 
