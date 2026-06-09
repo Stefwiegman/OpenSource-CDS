@@ -31,3 +31,8 @@ gridsearch_results.csv
 # Eigen meetdata + plots (onze metingen, niet relevant voor anderen)
 [Mm]etingen*.xlsx
 /*mm.png
+
+# Interne paper- en design-artefacten (lokaal behouden, niet publiek)
+paper_overlay.py
+assets/overlay_predictions.png
+mockup.html

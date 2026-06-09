@@ -229,8 +229,7 @@ Full theoretical background and derivations: see the [research paper](#-project-
 | `confocal.py` | Physics core: formula A6, `compute_q` / `Im` / `dz1` / `Sm` (sympy + numpy) |
 | `gridsearch.py` | Sweep over f1/f2 → measurement-range analysis → CSV (standalone) |
 | `viewer.py` | 3D plot + heatmap of scan data (standalone CLI) |
-| `paper_overlay.py` | Overlay of the fitted confocal curves for F1 = 16-80 mm into one figure (standalone CLI) |
-| `styles.qss` | Qt stylesheet (design tokens derived from `mockup.html`) |
+| `styles.qss` | Qt stylesheet (design tokens) |
 | `arduino/firmware/firmware.ino` | Nano firmware: AccelStepper + NeoPixel, ASCII command protocol |
 
 ---
