@@ -387,5 +387,5 @@ nog step->mm-kalibratie, betere optische uitlijning en fijnere actuatie.
 - Software: `ui.py`, `recording.py`, `scan.py`, `datalogger.py`, `viewer.py`, `lamp.py`,
   `camera_settings.py`, `calibration.py`, `calibration.yaml`
 - Firmware: `arduino/firmware/firmware.ino`
-- Hardware/docs: `cad/` (38 STEP + `cad/README.md`), `docs/wiring.md`, `docs/OpenSource_CDS_User_Guide.pptx`,
+- Hardware/docs: `cad/` (38 STEP + `cad/README.md`), `docs/wiring.md`, `docs/OpenSource_CDS_User_Guide.pdf`,
   `docs/OpenSource_CDS_BOM.xlsx`, `docs/OpenSource_CDS_Printing_Guide.pdf`, `README.md`, `assets/MAIN_ASSEMBLY.png`

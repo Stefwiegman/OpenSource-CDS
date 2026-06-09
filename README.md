@@ -25,10 +25,11 @@ Everything we made for this project lives behind one of these links.
 | 📄 Research paper | [🚧 TODO](#) <!-- TODO: paste paper URL (Overleaf share / PDF on Drive) --> | Theoretical background, confocal model derivation (appendix A), measurement results, discussion |
 | 🎥 Assembly video | [YouTube](https://www.youtube.com/watch?v=UzMbLptgHZc) | Step-by-step build from printed parts and electronics to a working instrument |
 | 📐 CAD files | [`cad/`](cad/) | 38 STEP source files for every printed part of the confocal extension, grouped by category (BASE / BLOCKS / CALIBRATION) |
+| 🧩 Assembly viewer | [Onshape](https://cad.onshape.com/documents/87fafcc64806dd978cd8e8a6/w/b53780b5a9e32836df5ce22e/e/844e572a161a9db474edfe58) | Interactive 3D model of the full assembly: rotate and inspect in the browser, or export STEP / STL yourself |
 | 🔧 Circuit diagram | [`docs/circuit-diagram.pdf`](docs/circuit-diagram.pdf) | Arduino pin-out, ULN2003 IN2/IN3-swap, power, Moku and camera connections (PDF, download to view) |
 | 🛒 Parts list (BOM) | [`docs/OpenSource_CDS_BOM.xlsx`](docs/OpenSource_CDS_BOM.xlsx) | Electronics, optics, mechanical hardware, quantities, suppliers, prices (Excel, download to view) |
 | 🖨️ 3D-print guide | [`docs/OpenSource_CDS_Printing_Guide.pdf`](docs/OpenSource_CDS_Printing_Guide.pdf) | Printer settings, per-part list with print times, filament estimates, tolerances |
-| 📖 Use guide | [`docs/OpenSource_CDS_User_Guide.pptx`](docs/OpenSource_CDS_User_Guide.pptx) | First-time setup, calibration, manual burst, analysis, troubleshooting (PowerPoint, download to view) |
+| 📖 Use guide | [`docs/OpenSource_CDS_User_Guide.pdf`](docs/OpenSource_CDS_User_Guide.pdf) | First-time setup, calibration, manual burst, analysis, troubleshooting (PDF, download to view) |
 | 🧱 Block stage origin | [openflexure.org/projects/blockstage](https://openflexure.org/projects/blockstage/) | Upstream open-hardware base, required reading before fabrication |
 | 💻 Source code | this repository | PySide6 desktop UI, Arduino firmware, burst pipeline, confocal physics model |
 
@@ -68,7 +69,7 @@ If terms below are new to you, this short table covers the rest of the README:
 
 - **Reading the paper?** Start with the [research paper](#-project-hub), then the [Hardware overview](#hardware-overview) for the optical setup.
 - **Building a copy?** Read [Built on top of](#-built-on-top-of) first, then open the [3D-print guide](docs/OpenSource_CDS_Printing_Guide.pdf), [BOM](docs/OpenSource_CDS_BOM.xlsx), [circuit diagram](docs/circuit-diagram.pdf), and watch the [assembly video](https://www.youtube.com/watch?v=UzMbLptgHZc).
-- **Running an existing instrument?** Jump to [Prerequisites](#prerequisites) and [Setup](#setup), then the [use guide](docs/OpenSource_CDS_User_Guide.pptx).
+- **Running an existing instrument?** Jump to [Prerequisites](#prerequisites) and [Setup](#setup), then the [use guide](docs/OpenSource_CDS_User_Guide.pdf).
 - **Hacking the software?** See [Repository layout](#repository-layout).
 
 ---
@@ -92,7 +93,7 @@ Estimated total build cost: **≈ €1600**, dominated by the Moku:Go (≈ €68
 
 ## Setup
 
-This chapter takes you from a fresh clone to all three TopBar status pills (`Motors / Moku / Camera`) turning green. For operating the instrument afterwards (calibration, measuring, analysis) see the [use guide](docs/OpenSource_CDS_User_Guide.pptx).
+This chapter takes you from a fresh clone to all three TopBar status pills (`Motors / Moku / Camera`) turning green. For operating the instrument afterwards (calibration, measuring, analysis) see the [use guide](docs/OpenSource_CDS_User_Guide.pdf).
 
 ### 1. Clone and create a Python environment
 
@@ -132,13 +133,25 @@ The stage motors and lamp are driven by an Arduino Nano. Flash it once with the 
 
 Note the port the Nano enumerates on, you pick it in the app later (the defaults assume `COM4`). Wiring, including the ULN2003 IN2/IN3 swap, is in the [wiring guide](docs/wiring.md).
 
-### 4. Connect the Moku:Go
+### 4. Set up the Moku:Go (one-time)
 
-Connect the Moku:Go over Ethernet or join its Wi-Fi Access Point. Put your PC's network adapter on the same subnet (`192.168.73.x`) and confirm the device responds:
+The `moku` Python client deploys an instrument bitstream (Oscilloscope / Datalogger) to the Moku:Go's FPGA at runtime, and that bitstream must match the device's MokuOS version. Install the Liquid Instruments CLI and cache the matching bitstreams once:
 
-```bash
-ping 192.168.73.1
-```
+1. **Connect to the device.** Join the Moku:Go's Wi-Fi Access Point or wire it over Ethernet, put your PC's network adapter on the same subnet (`192.168.73.x`), and confirm it responds:
+   ```bash
+   ping 192.168.73.1
+   ```
+2. **Install the CLI.** Download and install `mokucli` from Liquid Instruments: [liquidinstruments.com/software/utilities](https://liquidinstruments.com/software/utilities/).
+3. **Read the MokuOS version.** With the device reachable, list it and note the firmware version reported:
+   ```bash
+   mokucli list
+   ```
+4. **Download the matching bitstreams.** Use the version from the previous step:
+   ```bash
+   mokucli instrument download <mokuos_version>
+   ```
+
+Stuck on any of these? Liquid Instruments' AI support assistant covers CLI install and firmware issues: [liquidinstruments.com/support](https://liquidinstruments.com/support/).
 
 ### 5. Connect the microscope camera
 
@@ -150,11 +163,11 @@ Plug in the external USB microscope camera (UVC, ≥1080p). The laptop's built-i
 python ui.py
 ```
 
-In the app, open the **Setup tab**, pick your Arduino COM-port and click **Connect**. The TopBar pills `Motors / Moku / Camera` should all turn green. If one stays red, see the troubleshooting section of the [use guide](docs/OpenSource_CDS_User_Guide.pptx).
+In the app, open the **Setup tab**, pick your Arduino COM-port and click **Connect**. The TopBar pills `Motors / Moku / Camera` should all turn green. If one stays red, see the troubleshooting section of the [use guide](docs/OpenSource_CDS_User_Guide.pdf).
 
 **Defaults:** Arduino on `COM4 @ 9600 baud`, Moku at `192.168.73.1` (50 Vpp range), external microscope camera auto-detected (MJPG @ 1080p/30 fps). The laptop's built-in webcam (index 0) is never opened.
 
-With all pills green, continue in the [use guide](docs/OpenSource_CDS_User_Guide.pptx) to calibrate, set the I0 reference, and record measurements.
+With all pills green, continue in the [use guide](docs/OpenSource_CDS_User_Guide.pdf) to calibrate, set the I0 reference, and record measurements.
 
 ---
 
@@ -183,7 +196,7 @@ Full pin-out, schematic and connector list → [`docs/circuit-diagram.pdf`](docs
 | **Setup** | Connect, jog in exact micron steps, soft-home ("Set 0 here"), set speed, restore the last saved position. |
 | **Camera** | Exposure, brightness, contrast, auto-exposure, grayscale, plus the inner and outer lamp brightness controls. |
 
-Step-by-step operating instructions → [`docs/OpenSource_CDS_User_Guide.pptx`](docs/OpenSource_CDS_User_Guide.pptx).
+Step-by-step operating instructions → [`docs/OpenSource_CDS_User_Guide.pdf`](docs/OpenSource_CDS_User_Guide.pdf).
 
 ---
 
