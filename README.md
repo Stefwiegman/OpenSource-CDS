@@ -29,7 +29,7 @@ Everything we made for this project lives behind one of these links.
 | 🔧 Circuit diagram | [`docs/circuit-diagram.pdf`](docs/circuit-diagram.pdf) | Arduino pin-out, ULN2003 IN2/IN3-swap, power, Moku and camera connections (PDF, download to view) |
 | 🛒 Parts list (BOM) | [`docs/OpenSource_CDS_BOM.xlsx`](docs/OpenSource_CDS_BOM.xlsx) | Electronics, optics, mechanical hardware, quantities, suppliers, prices (Excel, download to view) |
 | 🖨️ 3D-print guide | [`docs/OpenSource_CDS_Printing_Guide.pdf`](docs/OpenSource_CDS_Printing_Guide.pdf) | Printer settings, per-part list with print times, filament estimates, tolerances |
-| 📖 Use guide | [`docs/OpenSource_CDS_User_Guide.pdf`](docs/OpenSource_CDS_User_Guide.pdf) | First-time setup, calibration, manual burst, analysis, troubleshooting (PDF, download to view) |
+| 📖 Use guide | [`docs/OpenSource_CDS_User_Guide.pdf`](docs/OpenSource_CDS_User_Guide.pdf) | Optical alignment (tower, LED, mirror, detector), laser calibration, powering on, homing the stage, finding I0 and the calibration sweep (PDF, download to view) |
 | 🧱 Block stage origin | [openflexure.org/projects/blockstage](https://openflexure.org/projects/blockstage/) | Upstream open-hardware base, required reading before fabrication |
 | 💻 Source code | this repository | PySide6 desktop UI, Arduino firmware, burst pipeline, confocal physics model |
 
@@ -93,7 +93,7 @@ Estimated total build cost: **≈ €1600**, dominated by the Moku:Go (≈ €68
 
 ## Setup
 
-This chapter takes you from a fresh clone to all three TopBar status pills (`Motors / Moku / Camera`) turning green. For operating the instrument afterwards (calibration, measuring, analysis) see the [use guide](docs/OpenSource_CDS_User_Guide.pdf).
+This chapter takes you from a fresh clone to all three TopBar status pills (`Motors / Moku / Camera`) turning green. For aligning and calibrating the instrument afterwards (optical alignment, laser calibration, finding I0, calibration sweep) see the [use guide](docs/OpenSource_CDS_User_Guide.pdf).
 
 ### 1. Clone and create a Python environment
 
@@ -121,7 +121,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-This pulls in the UI and pipeline stack: PySide6 (Qt UI), the `moku` client, NumPy/SciPy, OpenCV (camera), SymPy (confocal model), PyYAML (calibration persistence) and openpyxl (Excel import in the Calibration graph tab).
+This pulls in the UI and pipeline stack: PySide6 (Qt UI), pyserial (Arduino link), the `moku` client, NumPy + matplotlib (math and plots), SymPy (confocal model), OpenCV + pygrabber (camera), pandas (Excel/CSV import in the Calibration graph tab) and PyYAML (calibration persistence).
 
 ### 3. Flash the Arduino firmware (one-time)
 
@@ -163,11 +163,11 @@ Plug in the external USB microscope camera (UVC, ≥1080p). The laptop's built-i
 python ui.py
 ```
 
-In the app, open the **Setup tab**, pick your Arduino COM-port and click **Connect**. The TopBar pills `Motors / Moku / Camera` should all turn green. If one stays red, see the troubleshooting section of the [use guide](docs/OpenSource_CDS_User_Guide.pdf).
+In the app, open the **Setup tab**, pick your Arduino COM-port and click **Connect**. The TopBar pills `Motors / Moku / Camera` should all turn green. If one stays red, recheck the cabling and power for that subsystem; the [use guide](docs/OpenSource_CDS_User_Guide.pdf) walks through the full power-on sequence.
 
 **Defaults:** Arduino on `COM4 @ 9600 baud`, Moku at `192.168.73.1` (50 Vpp range), external microscope camera auto-detected (MJPG @ 1080p/30 fps). The laptop's built-in webcam (index 0) is never opened.
 
-With all pills green, continue in the [use guide](docs/OpenSource_CDS_User_Guide.pdf) to calibrate, set the I0 reference, and record measurements.
+With all pills green, continue in the [use guide](docs/OpenSource_CDS_User_Guide.pdf) to align the optics, find the I0 reference, and run the calibration sweep. Recording measurements afterwards is done in the app (see [UI layout](#ui-layout) and [How it works](#how-it-works)).
 
 ---
 
@@ -196,7 +196,7 @@ Full pin-out, schematic and connector list → [`docs/circuit-diagram.pdf`](docs
 | **Setup** | Connect, jog in exact micron steps, soft-home ("Set 0 here"), set speed, restore the last saved position. |
 | **Camera** | Exposure, brightness, contrast, auto-exposure, grayscale, plus the inner and outer lamp brightness controls. |
 
-Step-by-step operating instructions → [`docs/OpenSource_CDS_User_Guide.pdf`](docs/OpenSource_CDS_User_Guide.pdf).
+Step-by-step optical alignment and calibration → [`docs/OpenSource_CDS_User_Guide.pdf`](docs/OpenSource_CDS_User_Guide.pdf).
 
 ---
 
@@ -235,6 +235,7 @@ Full theoretical background and derivations: see the [research paper](#-project-
 | `confocal.py` | Physics core: formula A6, `compute_q` / `Im` / `dz1` / `Sm` (sympy + numpy) |
 | `gridsearch.py` | Sweep over f1/f2 → measurement-range analysis → CSV (standalone) |
 | `viewer.py` | 3D plot + heatmap of scan data (standalone CLI) |
+| `paper_overlay.py` | Overlay of the fitted confocal curves for F1 = 16-80 mm into one figure (standalone CLI) |
 | `styles.qss` | Qt stylesheet (design tokens derived from `mockup.html`) |
 | `arduino/firmware/firmware.ino` | Nano firmware: AccelStepper + NeoPixel, ASCII command protocol |
 
