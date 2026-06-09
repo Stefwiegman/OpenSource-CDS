@@ -3,9 +3,11 @@
 > **Affordable confocal displacement measurement.**
 > *Confocal Displacements Sensing voor betaalbare verplaatsingsmetingen*
 
-![Confocal Displacement Sensor, CAD render of the assembled instrument]<img src="assets/MAIN_ASSEMBLY.png"
-     alt="Confocal Displacement Sensor, CAD render of the assembled instrument"
-     width="500">
+![Confocal Displacement Sensor, CAD render of the assembled instrument](<p align="center">
+  <img src="assets/MAIN_ASSEMBLY.png"
+       alt="Confocal Displacement Sensor, CAD render of the assembled instrument"
+       width="400">
+</p>)
 
 ![Status](https://img.shields.io/badge/status-active-success) ![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![UI](https://img.shields.io/badge/UI-PySide6-41cd52) ![Hardware](https://img.shields.io/badge/hardware-Arduino%20Nano%20%2B%20Moku%3AGo-orange) ![Course](https://img.shields.io/badge/TU%20Delft-WBMT3BEP%20%C2%B7%20PME--2026--A06-00a6d6)
 
