@@ -23,4 +23,11 @@ confocal_fits.yaml
 
 # Gridsearch-output (regenereerbaar)
 gridsearch_results.csv
-.gltf
+
+# CAD-exports (de STEP-bronnen in cad/step/ zijn bewust wel getrackt)
+*.gltf
+*.glb
+
+# Eigen meetdata + plots (onze metingen, niet relevant voor anderen)
+[Mm]etingen*.xlsx
+/*mm.png

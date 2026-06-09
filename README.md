@@ -212,12 +212,6 @@ Repeating step 2 across a grid of positions (repositioned with the Setup tab jog
 
 Full theoretical background and derivations: see the [research paper](#-project-hub).
 
-### Example output
-
-<!-- TODO: add a (heatmap of dz1 across the scan grid) and (FFT spectrum for one representative point). Save as `assets/example-heatmap.png` and `assets/example-spectrum.png`. -->
-
-> 🚧 An example dataset, dz1 heatmap, and FFT spectrum will appear here once a representative measurement is captured.
-
 ---
 
 ## Repository layout
