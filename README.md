@@ -27,7 +27,7 @@ Everything we made for this project lives behind one of these links.
 | Deliverable | Link | What's inside |
 |---|---|---|
 | 📄 Research paper | [🚧 TODO](#) <!-- TODO: paste paper URL (Overleaf share / PDF on Drive) --> | Theoretical background, confocal model derivation (appendix A), measurement results, discussion |
-| 🎥 Assembly video | [YouTube](https://www.youtube.com/watch?v=UzMbLptgHZc) | Step-by-step build from printed parts and electronics to a working instrument |
+| 🎥 Assembly video | [YouTube](https://youtu.be/qtCvRlFayCg) | Step-by-step build from printed parts and electronics to a working instrument |
 | 📐 CAD files | [`cad/`](cad/) | 51 STEP files (`cad/step/`) for the confocal extension, plus 6 STL of the OpenFlexure stage (`cad/stl/`), grouped by category (BASE / BLOCKS / CALIBRATION / STAGE) |
 | 🧩 Assembly viewer | [Onshape](https://cad.onshape.com/documents/87fafcc64806dd978cd8e8a6/w/b53780b5a9e32836df5ce22e/e/844e572a161a9db474edfe58) | Interactive 3D model of the full assembly: rotate and inspect in the browser, or export STEP / STL yourself |
 | 🔧 Circuit diagram | [`docs/circuit-diagram.pdf`](docs/circuit-diagram.pdf) | Arduino pin-out, ULN2003 IN2/IN3-swap, power, Moku and camera connections (PDF, download to view) |
