@@ -80,7 +80,7 @@ def main() -> None:
         amp = vpp * 1e6
 
         ax.plot(freq, amp, color=color, lw=1.2, alpha=0.85,
-                label=f"{speed} stappen/s")
+                label=f"{speed} steps/s")
 
         # Pieken zoeken met absolute drempels, daarna de laagfrequente rommel
         # onder MIN_PEAK_FREQ_HZ eruit filteren.
@@ -106,11 +106,11 @@ def main() -> None:
 
     ax.set_xlim(F_MIN_HZ, 500.0)
     ax.set_ylim(bottom=0.0)
-    ax.set_xlabel("Frequentie (Hz)")
+    ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("Amplitude (µVpp)")
-    ax.set_title("Trillingsspectrum per motorsnelheid (overlay)")
+    ax.set_title("Vibration spectrum per motor speed (overlay)")
     ax.grid(True, which="both", alpha=0.3)
-    ax.legend(title="Motorsnelheid", framealpha=0.9)
+    ax.legend(title="Motor speed", framealpha=0.9)
     fig.tight_layout()
     # Extra ruimte onderaan voor de Hz-labels die onder de x-as staan.
     fig.subplots_adjust(bottom=0.20)

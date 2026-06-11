@@ -34,7 +34,8 @@ F1_VALUES = np.array([
     30,
     40,
     50,
-    60
+    60,
+    80
 ])
 F2_VALUES = np.array([
     60,

@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -1260,6 +1261,28 @@ class CameraCard(QFrame):
 
 # -------------------- Main window --------------------
 
+def _wrap_scroll(widget: QWidget) -> QScrollArea:
+    """Put *widget* inside a scrollable area so it never gets clipped.
+
+    When the available space is at least the widget's minimum size, the widget
+    fills the viewport exactly as before (no scrollbars). When the window is too
+    small or the display is heavily scaled, scrollbars appear instead of the
+    content being cut off, so every control stays reachable on any screen size.
+
+    The area is transparent and borderless so the existing QSS background and
+    card styling show through unchanged.
+    """
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    scroll.setWidget(widget)
+    scroll.viewport().setStyleSheet("background: transparent;")
+    scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+    return scroll
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -1335,12 +1358,15 @@ class MainWindow(QMainWindow):
         camera_tab_v.addWidget(self.lamp_panel_buiten)
         camera_tab_v.addStretch(1)
 
+        # Each tab page is wrapped in a scroll area so a tall page (e.g. the
+        # Camera tab with both lamp panels) scrolls instead of being clipped on
+        # a short sidebar; the panels themselves are unchanged.
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        self.tabs.addTab(self.recording_panel, "Manual")
-        self.tabs.addTab(self.calibration_graph_panel, "Calibration graph")
-        self.tabs.addTab(self.motor_panel, "Setup")
-        self.tabs.addTab(camera_tab, "Camera")
+        self.tabs.addTab(_wrap_scroll(self.recording_panel), "Manual")
+        self.tabs.addTab(_wrap_scroll(self.calibration_graph_panel), "Calibration graph")
+        self.tabs.addTab(_wrap_scroll(self.motor_panel), "Setup")
+        self.tabs.addTab(_wrap_scroll(camera_tab), "Camera")
         self.tabs.setCurrentIndex(2)  # start in Setup so you can connect first
 
         sidebar = QWidget()
@@ -1383,7 +1409,12 @@ class MainWindow(QMainWindow):
         body_v.setContentsMargins(12, 12, 12, 12)
         body_v.setSpacing(0)
         body_v.addWidget(v_splitter)
-        root_v.addWidget(body, stretch=1)
+        # Below this comfortable size the full layout (camera feed + sidebar +
+        # Moku plot) would have to squash to fit. Instead we keep it at this size
+        # and let the surrounding scroll area show scrollbars, so the whole UI
+        # stays usable on small or DPI-scaled laptop screens.
+        body.setMinimumSize(1040, 720)
+        root_v.addWidget(_wrap_scroll(body), stretch=1)
 
         self.setCentralWidget(root)
 
