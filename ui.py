@@ -24,7 +24,7 @@ import serial
 import serial.tools.list_ports
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QFontDatabase, QImage, QPixmap
+from PySide6.QtGui import QFontDatabase, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -267,7 +267,9 @@ class CameraThread(QThread):
 class CameraPanel(QLabel):
     def __init__(self) -> None:
         super().__init__()
-        self.setMinimumSize(480, 360)
+        # Keep this small so the whole window can still shrink to fit a laptop
+        # screen; the feed scales up to fill whatever space the splitter gives it.
+        self.setMinimumSize(320, 240)
         self.setAlignment(Qt.AlignCenter)
         self.setStyleSheet("background-color: black; color: white;")
         self.setText("Waiting for microscope camera...")
@@ -1262,6 +1264,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Bep-Project · Confocal")
+        # Preferred size; _fit_to_screen() in main() clamps this to the actual
+        # display so the window never opens larger than the screen it lands on.
         self.resize(1400, 900)
 
         # ---- panels (functionally unchanged) ----
@@ -1355,7 +1359,9 @@ class MainWindow(QMainWindow):
         h_splitter.setChildrenCollapsible(False)
 
         # ---- vertical splitter (top | moku) ----
-        self.moku_panel.setMinimumHeight(380)
+        # Low enough that the window still fits on a 768 px-tall laptop screen;
+        # the plot grows to use any extra height the splitter hands it.
+        self.moku_panel.setMinimumHeight(260)
         v_splitter = QSplitter(Qt.Vertical)
         v_splitter.addWidget(h_splitter)
         v_splitter.addWidget(self.moku_panel)
@@ -1402,6 +1408,30 @@ def _load_fonts() -> None:
             QFontDatabase.addApplicationFont(str(font_file))
 
 
+def _fit_to_screen(win: QMainWindow) -> None:
+    """Clamp the window to the screen it opens on.
+
+    The layout is designed around a 1400x900 window, but on a smaller or
+    heavily DPI-scaled laptop screen that size would overflow off-screen (the
+    title bar can end up unreachable). We shrink the window to the available
+    work area, keep a margin for the taskbar, and maximize it when the preferred
+    size does not fit. On a large monitor nothing changes.
+    """
+    screen = win.screen() or QGuiApplication.primaryScreen()
+    if screen is None:
+        return
+    avail = screen.availableGeometry()
+    pref_w, pref_h = 1400, 900
+    fits = pref_w <= avail.width() and pref_h <= avail.height()
+    target_w = min(pref_w, avail.width() - 40)
+    target_h = min(pref_h, avail.height() - 80)
+    win.resize(max(target_w, 800), max(target_h, 600))
+    win.move(avail.center() - win.rect().center())
+    if not fits:
+        # Defer actual display to the win.show() in main().
+        win.setWindowState(win.windowState() | Qt.WindowMaximized)
+
+
 def _load_stylesheet(app: QApplication) -> None:
     """Load styles.qss if it sits next to ui.py. Silent if missing."""
     try:
@@ -1414,11 +1444,18 @@ def _load_stylesheet(app: QApplication) -> None:
 
 
 def main() -> None:
+    # PassThrough keeps fractional Windows display scaling (e.g. 125% / 150%)
+    # smooth instead of snapping to whole integers. Must be set before the
+    # QApplication is created.
+    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
     app = QApplication(sys.argv)
     app.setApplicationName("Bep-Project")
     _load_fonts()
     _load_stylesheet(app)
     win = MainWindow()
+    _fit_to_screen(win)
     win.show()
     sys.exit(app.exec())
 

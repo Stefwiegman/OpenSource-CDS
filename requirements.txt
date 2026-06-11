@@ -4,6 +4,7 @@ sympy
 pyyaml
 moku
 pandas
+openpyxl
 opencv-python
 pygrabber
 PySide6

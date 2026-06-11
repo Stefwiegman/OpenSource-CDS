@@ -125,7 +125,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-This pulls in the UI and pipeline stack: PySide6 (Qt UI), pyserial (Arduino link), the `moku` client, NumPy + matplotlib (math and plots), SymPy (confocal model), OpenCV + pygrabber (camera), pandas (Excel/CSV import in the Calibration graph tab) and PyYAML (calibration persistence).
+This pulls in the UI and pipeline stack: PySide6 (Qt UI), pyserial (Arduino link), the `moku` client, NumPy + matplotlib (math and plots), SymPy (confocal model), OpenCV + pygrabber (camera), pandas + openpyxl (Excel/CSV import in the Calibration graph tab) and PyYAML (calibration persistence).
+
+> **Note:** `openpyxl` is the engine pandas uses to read `.xlsx` files. Without it the Calibration graph tab cannot open Excel measurement files, so it is pinned in `requirements.txt` even though pandas does not install it automatically.
 
 ### 3. Flash the Arduino firmware (one-time)
 
@@ -139,21 +141,29 @@ Note the port the Nano enumerates on, you pick it in the app later (the defaults
 
 ### 4. Set up the Moku:Go (one-time)
 
-The `moku` Python client deploys an instrument bitstream (Oscilloscope / Datalogger) to the Moku:Go's FPGA at runtime, and that bitstream must match the device's MokuOS version. Install the Liquid Instruments CLI and cache the matching bitstreams once:
+The `moku` Python client deploys an instrument bitstream (Oscilloscope / Datalogger) to the Moku:Go's FPGA at runtime, and that bitstream must match the device's MokuOS version. Install the Liquid Instruments CLI, point the Python client at it, and cache the matching bitstreams once:
 
-1. **Connect to the device.** Join the Moku:Go's Wi-Fi Access Point or wire it over Ethernet, put your PC's network adapter on the same subnet (`192.168.73.x`), and confirm it responds:
+1. **Install the CLI.** Download and install `mokucli` from Liquid Instruments: [liquidinstruments.com/software/utilities](https://liquidinstruments.com/software/utilities/). On Windows it lands at `C:\Program Files\Liquid Instruments\Moku CLI\mokucli.exe`. **Keep the default install folder.** The Python client locates `mokucli` through the path you set in the next step, so moving the install folder breaks bitstream deployment.
+
+2. **Tell the `moku` client where the CLI is.** Set the `MOKU_CLI_PATH` environment variable to the executable from the previous step. On Windows (run once, in a normal PowerShell or Command Prompt, then open a new terminal so the variable is picked up):
+   ```powershell
+   setx MOKU_CLI_PATH "C:\Program Files\Liquid Instruments\Moku CLI\mokucli.exe"
+   ```
+   If you installed `mokucli` somewhere else, point this at that path instead.
+
+3. **Find the device security key.** Each Moku:Go has a unique key printed on the **sticker on the bottom of the device**. You need it the first time you claim or connect to the Moku:Go through your Liquid Instruments account.
+
+4. **Read the MokuOS version.** Connect to the device first: join the Moku:Go's Wi-Fi Access Point or wire it over Ethernet, put your PC's network adapter on the same subnet (`192.168.73.x`), confirm it responds, then list it and note the firmware version reported:
    ```bash
    ping 192.168.73.1
-   ```
-2. **Install the CLI.** Download and install `mokucli` from Liquid Instruments: [liquidinstruments.com/software/utilities](https://liquidinstruments.com/software/utilities/).
-3. **Read the MokuOS version.** With the device reachable, list it and note the firmware version reported:
-   ```bash
    mokucli list
    ```
-4. **Download the matching bitstreams.** Use the version from the previous step:
+
+5. **Download the matching bitstreams.** This step pulls the bitstreams from Liquid Instruments' servers, so you must be **connected to the internet** (switch off the Moku:Go Access-Point Wi-Fi and back onto your normal network first). Use the version from the previous step and the `mokugo` hardware flag:
    ```bash
-   mokucli instrument download <mokuos_version>
+   mokucli instrument download <mokuos_version> --hw-version mokugo
    ```
+   For example, for MokuOS 4.2.1: `mokucli instrument download 4.2.1 --hw-version mokugo`.
 
 Stuck on any of these? Liquid Instruments' AI support assistant covers CLI install and firmware issues: [liquidinstruments.com/support](https://liquidinstruments.com/support/).
 
@@ -168,6 +178,10 @@ python ui.py
 ```
 
 In the app, open the **Setup tab**, pick your Arduino COM-port and click **Connect**. The TopBar pills `Motors / Moku / Camera` should all turn green. If one stays red, recheck the cabling and power for that subsystem; the [use guide](docs/OpenSource_CDS_User_Guide.pdf) walks through the full power-on sequence.
+
+> **Windows Firewall (first launch).** The first time the app opens a network socket, Windows shows a firewall prompt. Allow access on **Private networks** so the app can reach the Moku:Go. If you dismissed it or ticked the wrong box, the Moku pill stays red: open **Windows Security → Firewall & network protection → Allow an app through firewall**, find Python (or the app), and enable its **Private** checkbox.
+
+> **Display scaling.** The window sizes itself to fit the screen it opens on, so it stays usable on smaller or DPI-scaled laptops (Windows display scaling of 125% / 150% is handled). On a display too small for the full layout it opens maximized; drag the splitter bars to rebalance the camera, sidebar, and Moku plot.
 
 **Defaults:** Arduino on `COM4 @ 9600 baud`, Moku at `192.168.73.1` (50 Vpp range), external microscope camera auto-detected (MJPG @ 1080p/30 fps). The laptop's built-in webcam (index 0) is never opened.
 
