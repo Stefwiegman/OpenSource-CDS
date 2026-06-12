@@ -26,7 +26,7 @@ Everything we made for this project lives behind one of these links.
 
 | Deliverable | Link | What's inside |
 |---|---|---|
-| 📄 Research paper | [🚧 TODO](#) <!-- TODO: paste paper URL (Overleaf share / PDF on Drive) --> | Theoretical background, confocal model derivation (appendix A), measurement results, discussion |
+| 📄 Research paper | [`docs/OpenSource_CDS_Paper.pdf`](docs/OpenSource_CDS_Paper.pdf) | "Frugal & Portable Monochromatic Confocal Displacement Sensing using the OpenFlexure framework": theory and confocal intensity model (Section II), grid-search lens selection, measured sensitivity vs. range, AFM-cantilever alignment, frequency-domain demonstration, discussion (PDF, download to view) |
 | 🎥 Assembly video | [YouTube](https://youtu.be/qtCvRlFayCg) | Step-by-step build from printed parts and electronics to a working instrument |
 | 📐 CAD files | [`cad/`](cad/) | 51 STEP files (`cad/step/`) for the confocal extension, plus 6 STL of the OpenFlexure stage (`cad/stl/`), grouped by category (BASE / BLOCKS / CALIBRATION / STAGE) |
 | 🧩 Assembly viewer | [Onshape](https://cad.onshape.com/documents/87fafcc64806dd978cd8e8a6/w/b53780b5a9e32836df5ce22e/e/844e572a161a9db474edfe58) | Interactive 3D model of the full assembly: rotate and inspect in the browser, or export STEP / STL yourself |
@@ -52,7 +52,7 @@ The instrument **measures sub-micron axial displacement** (vertical position cha
 
 The goal is to deliver this capability at a small fraction of the cost of commercial confocal displacement sensors, making the technology accessible for academic and small-lab settings.
 
-A natural application, and our demonstration case, is **vibration-frequency mapping of MEMS devices**: each burst's spectrum becomes one point in a 3D dataset `(x, y, frequency) → amplitude`.
+The motivating application is **vibration characterisation of MEMS-class structures**: each burst's spectrum becomes one point in a 3D dataset `(x, y, frequency) → amplitude`. In the paper this is demonstrated by aligning the laser on an AFM cantilever (≈450 µm × 50 µm) and recovering the known vibration frequencies of a stepper motor.
 
 ### Glossary
 
